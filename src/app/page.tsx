@@ -98,9 +98,9 @@ export default function Home() {
   const [result, setResult] = useState<SearchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scraping, setScraping] = useState(false);
+  const [healing, setHealing] = useState(false);
   const [statusPolling, setStatusPolling] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollAttemptRef = useRef(0);
 
   const pollStatus = useCallback(async (companyId: string) => {
     try {
@@ -134,19 +134,10 @@ export default function Home() {
 
   useEffect(() => {
     if (statusPolling && result?.company.id) {
-      // Poll immediately, then every 3 seconds
-      const MAX_POLL_ATTEMPTS = 40; // ~2 minutes at 3s interval
-
+      // Poll immediately, then every 3 seconds. No attempt cap: scraping and
+      // self-healing can legitimately take a long time, so keep polling until
+      // the status endpoint reports a stable (non-processing) state.
       const poll = async () => {
-        pollAttemptRef.current += 1;
-
-        if (pollAttemptRef.current > MAX_POLL_ATTEMPTS) {
-          if (pollRef.current) clearInterval(pollRef.current);
-          setStatusPolling(false);
-          setError("Scrape is taking longer than expected. Check back shortly.");
-          return;
-        }
-
         const shouldStop = await pollStatus(result.company.id);
         if (shouldStop && pollRef.current) {
           clearInterval(pollRef.current);
@@ -216,14 +207,37 @@ export default function Home() {
       }
 
       // API returns immediately - start polling for status updates
-      pollAttemptRef.current = 0;
       setStatusPolling(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Scrape failed");
     } finally {
       setScraping(false);
     }
-  }, [result?.company.id]);
+  }, [result]);
+
+  const handleHeal = useCallback(async () => {
+    if (!result?.company.id) return;
+    setHealing(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/companies/${result.company.id}/heal`, {
+        method: "POST",
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Healing failed");
+      }
+
+      // Start polling so the status and jobs update when healing completes
+      setStatusPolling(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Healing failed");
+    } finally {
+      setHealing(false);
+    }
+  }, [result]);
 
   return (
     <div className="flex flex-col flex-1">
@@ -412,7 +426,7 @@ export default function Home() {
                   <button
                     className="btn-primary"
                     onClick={handleScrape}
-                    disabled={scraping || statusPolling}
+                    disabled={scraping || statusPolling || healing}
                   >
                     {scraping
                       ? "Starting..."
@@ -424,6 +438,15 @@ export default function Home() {
                           ? "Start Scraping"
                           : "Refresh Jobs"}
                   </button>
+                  {result.company.status === "healing_failed" && (
+                    <button
+                      className="px-4 py-2 rounded-lg border border-amber-700 text-amber-300 hover:bg-amber-950/40 transition-colors text-sm"
+                      onClick={handleHeal}
+                      disabled={healing || statusPolling || scraping}
+                    >
+                      {healing ? "Healing..." : "Heal Scraper"}
+                    </button>
+                  )}
                   <button
                     className="px-4 py-2 rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800 transition-colors text-sm"
                     onClick={() => {
@@ -480,7 +503,7 @@ export default function Home() {
               )}
 
               {/* Jobs List */}
-              {result.jobs.length > 0 && (
+              {!scraping && !healing && !statusPolling && result.jobs.length > 0 && (
                 <div>
                   <h3 className="text-lg font-semibold mb-4">
                     {result.jobs.length} Jobs Found
@@ -545,6 +568,7 @@ export default function Home() {
               {/* No jobs state */}
               {result.jobs.length === 0 &&
                 !scraping &&
+                !healing &&
                 !statusPolling &&
                 result.company.status !== "discovering" &&
                 result.company.status !== "creating_scraper" &&

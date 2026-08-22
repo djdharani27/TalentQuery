@@ -105,27 +105,28 @@ export class BrightDataClient {
 
   async waitForDataset(
     snapshotId: string,
-    opts: {
-      pollIntervalMs?: number;
-      maxAttempts?: number;
-      maxDurationMs?: number;
-    } = {}
+    opts: { pollIntervalMs?: number } = {}
   ): Promise<BrightDataDatasetResult> {
-    const {
-      pollIntervalMs = 5000,
-      maxAttempts = 120,
-      maxDurationMs = 10 * 60 * 1000,
-    } = opts;
-    const start = Date.now();
+    const { pollIntervalMs = 5000 } = opts;
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      if (Date.now() - start >= maxDurationMs) {
-        throw new Error(
-          `Timed out waiting for snapshot ${snapshotId} after ${maxDurationMs}ms`
-        );
+    // Loop until Bright Data reports a terminal state. A scrape can take a
+    // while (large pages, retries, or a slow collector), so there is no
+    // attempt or duration cap here.
+    for (;;) {
+      let raw: RawDatasetResponse;
+      try {
+        raw = await this.fetchDataset(snapshotId);
+      } catch (err) {
+        // Transient network/HTTP errors should be retried rather than killing
+        // a long-running scrape.
+        logger.warn("Dataset poll request failed, retrying", {
+          operation: "dataset_poll",
+          snapshot_id: snapshotId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        await sleep(pollIntervalMs);
+        continue;
       }
-
-      const raw = await this.fetchDataset(snapshotId);
 
       if (raw.httpStatus === 401) {
         throw new Error(
@@ -145,7 +146,6 @@ export class BrightDataClient {
         logger.warn("Dataset poll got transient HTTP error", {
           operation: "dataset_poll",
           snapshot_id: snapshotId,
-          attempt,
           http_status: raw.httpStatus,
           raw_body: raw.rawBody.slice(0, 300),
         });
@@ -157,7 +157,6 @@ export class BrightDataClient {
         logger.warn("Dataset response was not valid JSON", {
           operation: "dataset_poll",
           snapshot_id: snapshotId,
-          attempt,
           http_status: raw.httpStatus,
           parse_error: raw.parseError,
           raw_body: raw.rawBody.slice(0, 300),
@@ -174,7 +173,6 @@ export class BrightDataClient {
           logger.info("Dataset ready", {
             operation: "dataset_poll",
             snapshot_id: snapshotId,
-            attempt,
             http_status: raw.httpStatus,
             result_key: classification.resultKey,
             result_count: rows.length,
@@ -194,7 +192,6 @@ export class BrightDataClient {
           logger.debug("Dataset still building", {
             operation: "dataset_poll",
             snapshot_id: snapshotId,
-            attempt,
             http_status: raw.httpStatus,
             status: classification.statusValue ?? "unknown",
             message: classification.message,
@@ -216,10 +213,6 @@ export class BrightDataClient {
         }
       }
     }
-
-    throw new Error(
-      `Timed out waiting for snapshot ${snapshotId} after ${maxAttempts} attempts`
-    );
   }
 
   // ── Scraper Management ───────────────────────────────────────────
@@ -276,11 +269,11 @@ export class BrightDataClient {
 
   async waitForAIJob(
     collectorId: string,
-    opts: { pollIntervalMs?: number; maxAttempts?: number } = {}
+    opts: { pollIntervalMs?: number } = {}
   ): Promise<AIJobProgress> {
-    const { pollIntervalMs = 10000, maxAttempts = 60 } = opts;
+    const { pollIntervalMs = 10000 } = opts;
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    for (;;) {
       const progress = await this.getAIJobProgress(collectorId);
 
       if (progress.status === "done") return progress;
@@ -298,10 +291,6 @@ export class BrightDataClient {
 
       await sleep(pollIntervalMs);
     }
-
-    throw new Error(
-      `AI job timed out for collector ${collectorId}`
-    );
   }
 
   // ── Self-Healing API ─────────────────────────────────────────────
@@ -315,58 +304,105 @@ export class BrightDataClient {
       scraper_id: collectorId,
     });
 
-    const { data } = await this.http.post(
-      `/dca/collectors/${collectorId}/refactor_template`,
-      { prompt: prompt.slice(0, 1000) }
-    );
+    try {
+      const { data } = await this.http.post(
+        `/dca/collectors/${collectorId}/refactor_template`,
+        { prompt: prompt.slice(0, 1000) }
+      );
 
-    logger.info("Self-healing triggered", {
-      operation: "self_healing",
-      scraper_id: collectorId,
-      duration_ms: Date.now() - start,
-    });
+      logger.info("Self-healing triggered", {
+        operation: "self_healing",
+        scraper_id: collectorId,
+        duration_ms: Date.now() - start,
+      });
 
-    return data;
+      return data;
+    } catch (err) {
+      // A heal job is already in progress for this collector. Bright Data
+      // rejects a second refactor with 409, so treat it as a signal to poll
+      // (and approve if needed) the existing job rather than starting over.
+      if (axios.isAxiosError(err) && err.response?.status === 409) {
+        logger.warn("Self-healing already in progress, resuming existing job", {
+          operation: "self_healing",
+          scraper_id: collectorId,
+          duration_ms: Date.now() - start,
+        });
+        return { id: "existing_job" };
+      }
+      throw err;
+    }
   }
 
   async waitForSelfHealing(
     collectorId: string,
-    opts: { pollIntervalMs?: number; maxAttempts?: number } = {}
+    opts: { pollIntervalMs?: number } = {}
   ): Promise<AIJobProgress> {
-    const { pollIntervalMs = 10000, maxAttempts = 90 } = opts;
+    const { pollIntervalMs = 10000 } = opts;
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const successStatuses = new Set([
+      "done",
+      "ready",
+      "completed",
+      "success",
+      "finished",
+    ]);
+    const failureStatuses = new Set([
+      "failed",
+      "error",
+      "cancelled",
+      "canceled",
+    ]);
+
+    let approvedJobId: string | null = null;
+
+    // Loop until the self-healing job reaches a terminal state. The AI flow
+    // can take a long time, so there is no attempt cap here.
+    for (;;) {
       const progress = await this.getSelfHealingProgress(collectorId);
+      const status = progress.status?.toLowerCase();
 
-      if (progress.status === "done") return progress;
-      if (progress.status === "pending_answer") {
-        // Auto-approve the proposed changes
-        logger.info("Self-healing pending_answer, auto-approving", {
+      // Bright Data reports status:"done" while the refactor is still waiting
+      // for user approval (step:"user_approval"). That is not terminal yet:
+      // the diff must be approved before the healed template is saved.
+      if (isApprovalPending(progress)) {
+        // Only approve once per AI job. The API can keep reporting
+        // `user_approval` for a poll cycle after resume, and re-POSTing the
+        // approval endpoint then returns 409.
+        if (progress.id && approvedJobId === progress.id) {
+          await sleep(pollIntervalMs);
+          continue;
+        }
+
+        logger.info("Self-healing pending approval, auto-approving", {
           operation: "self_healing",
           scraper_id: collectorId,
+          status: progress.status,
+          step: progress.step,
+          job_id: progress.id,
         });
         await this.approveSelfHealing(collectorId);
+        if (progress.id) approvedJobId = progress.id;
         await sleep(pollIntervalMs);
         continue;
       }
-      if (progress.status === "failed" || progress.status === "error") {
+
+      if (status && successStatuses.has(status)) return progress;
+
+      if (status && failureStatuses.has(status)) {
         throw new Error(
           `Self-healing failed: ${progress.error || JSON.stringify(progress)}`
         );
       }
 
-      logger.debug("Self-healing progress", {
+      logger.info("Self-healing progress", {
         operation: "self_healing_poll",
         scraper_id: collectorId,
         status: progress.status,
+        step: progress.step,
       });
 
       await sleep(pollIntervalMs);
     }
-
-    throw new Error(
-      `Self-healing timed out for collector ${collectorId}`
-    );
   }
 
   async getSelfHealingProgress(collectorId: string): Promise<AIJobProgress> {
@@ -376,16 +412,43 @@ export class BrightDataClient {
     return data;
   }
 
-  private async approveSelfHealing(collectorId: string): Promise<void> {
-    await this.http.post(
-      `/dca/collectors/${collectorId}/resume_automation_job`,
-      { message: true, auto_save: true }
-    );
+  async approveSelfHealing(collectorId: string): Promise<void> {
+    try {
+      await this.http.post(
+        `/dca/collectors/${collectorId}/resume_automation_job`,
+        { message: true, auto_save: true }
+      );
+    } catch (err) {
+      // The approval endpoint is not idempotent: approving the same AI job
+      // again returns 409. Treat that as "already approved" so pollers that
+      // independently drive the same job forward don't fail the request.
+      if (axios.isAxiosError(err) && err.response?.status === 409) {
+        logger.warn("Self-healing approval already submitted", {
+          operation: "self_healing",
+          scraper_id: collectorId,
+        });
+        return;
+      }
+      throw err;
+    }
   }
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function isApprovalPending(progress: AIJobProgress): boolean {
+  if (progress.status === "pending_answer") return true;
+
+  // Bright Data can leave `step` at "user_approval" even after the diff has
+  // been approved and the template saved. The completed_steps list is the
+  // reliable signal: once "save_new_template" is present the job is done.
+  if (progress.step === "user_approval") {
+    return !(progress.completed_steps ?? []).includes("save_new_template");
+  }
+
+  return false;
 }
 
 interface ParsedDatasetBody {

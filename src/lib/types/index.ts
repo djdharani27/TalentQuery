@@ -162,10 +162,14 @@ export interface BrightDataDatasetResult {
 }
 
 export interface AIJobProgress {
+  id?: string;
   step?: string;
   completed_steps?: string[];
   status: string;
+  success?: boolean;
   error?: string;
+  preview_result?: unknown;
+  diff?: unknown;
 }
 
 export interface SelfHealingRequest {

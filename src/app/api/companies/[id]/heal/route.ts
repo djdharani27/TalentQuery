@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCompany } from "@/lib/scraper/registry";
+import { getCompany, updateCompanyStatus } from "@/lib/scraper/registry";
 import { BrightDataClient } from "@/lib/brightdata/client";
+import { executeScrape } from "@/lib/scraper/orchestrator";
 import { env } from "@/lib/env";
-import { updateCompanyStatus } from "@/lib/scraper/registry";
 import { logger } from "@/lib/logger";
 
 export async function POST(
@@ -25,6 +25,7 @@ export async function POST(
     }
 
     const client = new BrightDataClient(env.brightdata.apiToken);
+    const scraperId = company.scraper_id;
 
     logger.info("Manual heal requested", {
       operation: "heal_api",
@@ -37,20 +38,58 @@ export async function POST(
       healing_attempts: 0,
     });
 
-    // Trigger self-healing
-    const prompt = `The scraper for ${company.careers_url} is not returning expected job listings. Please fix the scraper to correctly extract job postings from this careers page. Each job should have at minimum a title field.`;
+    // Trigger self-healing. Include the known semantic markers for this page
+    // so the AI can select the right elements even when generic selectors fail.
+    const prompt = `The scraper for ${company.careers_url} is not returning expected job listings. Please fix the scraper to correctly extract job postings from this careers page. Each job should have at minimum a title field, plus location, department, employment_type, description, and url when available. Prefer semantic attributes such as data-job-row, data-job-title, data-job-location, and data-job-department when present.`;
 
-    await client.triggerSelfHealing(company.scraper_id, prompt);
-    const result = await client.waitForSelfHealing(company.scraper_id);
+    // Run healing in the background so the request returns immediately. The
+    // frontend polls the status endpoint instead of blocking for the full AI
+    // timeout (which can be 15+ minutes).
+    void (async () => {
+      try {
+        await client.triggerSelfHealing(scraperId, prompt);
+        await client.waitForSelfHealing(scraperId);
 
-    await updateCompanyStatus(company.id, "healthy", {
-      scraper_version: company.scraper_version + 1,
-    });
+        // The healed template is only saved after approval, so run the
+        // scraper again to pick up the new version and refresh job listings.
+        const healedCompany = (await getCompany(company.id)) ?? company;
+        const reScrape = await executeScrape({
+          ...healedCompany,
+          scraper_version: healedCompany.scraper_version + 1,
+          status: "healthy",
+        });
+
+        await updateCompanyStatus(company.id, "healthy", {
+          scraper_version: healedCompany.scraper_version + 1,
+          healing_attempts: 0,
+          last_job_count: reScrape.jobs.length,
+        });
+
+        logger.info("Manual heal completed", {
+          operation: "heal_api",
+          company: company.name,
+          company_id: company.id,
+          scraper_id: scraperId,
+          job_count: reScrape.jobs.length,
+          health_score: reScrape.healthScore,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+
+        logger.error("Manual heal failed", {
+          operation: "heal_api",
+          company: company.name,
+          company_id: company.id,
+          error: message,
+        });
+
+        await updateCompanyStatus(company.id, "healing_failed");
+      }
+    })();
 
     return NextResponse.json({
-      status: "healed",
-      result,
-      newVersion: company.scraper_version + 1,
+      status: "self_healing",
+      message: "Self-healing started. Poll status for updates.",
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Internal server error";

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { getSupabase } from "@/lib/db/supabase";
 import { BrightDataClient } from "@/lib/brightdata/client";
 import { normalizeJobs, extractRawJobs } from "./normalize";
@@ -74,7 +75,6 @@ export async function executeScrape(company: Company): Promise<{
     // the unwrapped rows and the raw Bright Data response for debugging.
     datasetResult = await client.waitForDataset(triggerResult.collection_id, {
       pollIntervalMs: 5000,
-      maxAttempts: 120,
     });
 
     rawResult = datasetResult.rows;
@@ -202,38 +202,22 @@ async function saveJobs(companyId: string, jobs: Job[]): Promise<void> {
   const now = new Date().toISOString();
 
   for (const job of jobs) {
-    const externalId = job.url
-      ? Buffer.from(job.url).toString("base64").slice(0, 255)
-      : null;
+    // Dedup by stable job identity, not URL. Self-healing can rewrite URL
+    // paths or apply links, which would otherwise turn the same posting into
+    // a brand-new row and leave the old row active forever.
+    const externalId = jobIdentity(job);
 
-    if (externalId) {
-      // Upsert by company + external_id
-      const { data: existing } = await db
+    const { data: existing } = await db
+      .from("jobs")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("external_id", externalId)
+      .single();
+
+    if (existing) {
+      await db
         .from("jobs")
-        .select("id")
-        .eq("company_id", companyId)
-        .eq("external_id", externalId)
-        .single();
-
-      if (existing) {
-        await db
-          .from("jobs")
-          .update({
-            title: job.title,
-            url: job.url || null,
-            location: job.location || null,
-            department: job.department || null,
-            employment_type: job.employment_type || null,
-            description: job.description || null,
-            raw_data: job,
-            last_seen_at: now,
-            is_active: true,
-          })
-          .eq("id", existing.id);
-      } else {
-        await db.from("jobs").insert({
-          company_id: companyId,
-          external_id: externalId,
+        .update({
           title: job.title,
           url: job.url || null,
           location: job.location || null,
@@ -241,12 +225,14 @@ async function saveJobs(companyId: string, jobs: Job[]): Promise<void> {
           employment_type: job.employment_type || null,
           description: job.description || null,
           raw_data: job,
+          last_seen_at: now,
           is_active: true,
-        });
-      }
+        })
+        .eq("id", existing.id);
     } else {
       await db.from("jobs").insert({
         company_id: companyId,
+        external_id: externalId,
         title: job.title,
         url: job.url || null,
         location: job.location || null,
@@ -259,23 +245,34 @@ async function saveJobs(companyId: string, jobs: Job[]): Promise<void> {
     }
   }
 
-  // Mark jobs not in this batch as inactive
-  const activeUrls = jobs
-    .filter((j) => j.url)
-    .map((j) => j.url as string);
+  // Deactivate anything from this company that was not in the current batch.
+  // This is what removes the old rows after self-healing rewrites their URLs.
+  const currentExternalIds = jobs.map((job) => jobIdentity(job));
 
-  if (activeUrls.length > 0) {
-    // Don't deactivate everything - only deactivate jobs not seen recently
+  if (currentExternalIds.length > 0) {
     await db
       .from("jobs")
       .update({ is_active: false })
       .eq("company_id", companyId)
       .eq("is_active", true)
-      .lt(
-        "last_seen_at",
-        new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-      );
+      .not("external_id", "in", `(${currentExternalIds.map((id) => `"${id}"`).join(",")})`);
   }
+}
+
+function jobIdentity(job: Job): string {
+  // Normalize and hash the stable parts of a posting. Title is the strongest
+  // signal; location/department/type disambiguate real same-title postings
+  // without depending on the URL (which the scraper may rewrite).
+  const normalized = [
+    job.title,
+    job.location ?? "",
+    job.department ?? "",
+    job.employment_type ?? "",
+  ]
+    .map((part) => part.trim().toLowerCase().replace(/\s+/g, " "))
+    .join("|");
+
+  return createHash("sha256").update(normalized).digest("hex").slice(0, 64);
 }
 
 async function triggerSelfHealing(
