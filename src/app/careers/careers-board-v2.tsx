@@ -123,26 +123,38 @@ export default function CareersBoardV2() {
                   className="tcv-vacancy"
                   data-open={isOpen}
                   key={job.applyUrl}
+                  data-job-row
+                  data-job-department={group.department}
                   onClick={() =>
                     setOpenDept(isOpen ? null : group.department)
                   }
                 >
                   <div className="tcv-summary">
                     <div>
-                      <div className="tcv-name">{job.title}</div>
-                      <div className="tcv-place">{job.place}</div>
+                      <div className="tcv-name" data-job-title>
+                        {job.title}
+                      </div>
+                      <div className="tcv-place" data-job-location>
+                        {job.place}
+                      </div>
                     </div>
                     <span className="tcv-chev">{isOpen ? "▲" : "▼"}</span>
                   </div>
                   {isOpen && (
                     <div className="tcv-body" onClick={(e) => e.stopPropagation()}>
-                      <p className="tcv-blurb">{job.blurb}</p>
+                      <p className="tcv-blurb" data-job-description>
+                        {job.blurb}
+                      </p>
                       <div className="tcv-facts">
-                        <span>{job.type}</span>
-                        <span>{job.salary}</span>
+                        <span data-job-type>{job.type}</span>
+                        <span data-job-salary>{job.salary}</span>
                       </div>
                       <br />
-                      <a className="tcv-cta" href={job.applyUrl}>
+                      <a
+                        className="tcv-cta"
+                        href={job.applyUrl}
+                        data-job-url
+                      >
                         Submit application →
                       </a>
                     </div>

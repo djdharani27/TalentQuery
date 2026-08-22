@@ -24,13 +24,6 @@ export async function POST(
       );
     }
 
-    if (company.healing_attempts >= 2) {
-      return NextResponse.json(
-        { error: "Maximum healing attempts reached" },
-        { status: 400 }
-      );
-    }
-
     const client = new BrightDataClient(env.brightdata.apiToken);
 
     logger.info("Manual heal requested", {
@@ -41,7 +34,7 @@ export async function POST(
     });
 
     await updateCompanyStatus(company.id, "self_healing", {
-      healing_attempts: company.healing_attempts + 1,
+      healing_attempts: 0,
     });
 
     // Trigger self-healing

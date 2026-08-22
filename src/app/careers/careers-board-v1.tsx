@@ -117,10 +117,19 @@ export default function CareersBoardV1() {
             </thead>
             <tbody>
               {JOBS.map((job) => (
-                <tr className="tcb-role-row tcb-row" key={job.applyUrl}>
+                <tr
+                  className="tcb-role-row tcb-row"
+                  key={job.applyUrl}
+                  data-job-row
+                  data-job-department={job.department}
+                >
                   <td className="tcb-cell">
-                    <h2 className="tcb-role-name">{job.title}</h2>
-                    <p className="tcb-role-summary">{job.description}</p>
+                    <h2 className="tcb-role-name" data-job-title>
+                      {job.title}
+                    </h2>
+                    <p className="tcb-role-summary" data-job-description>
+                      {job.description}
+                    </p>
                   </td>
                   <td className="tcb-cell">
                     <span className={`tcb-pill ${job.pillClass}`}>
@@ -128,14 +137,24 @@ export default function CareersBoardV1() {
                     </span>
                   </td>
                   <td className="tcb-cell">
-                    <div className="tcb-loc">{job.location}</div>
-                    <div className="tcb-type">{job.type}</div>
+                    <div className="tcb-loc" data-job-location>
+                      {job.location}
+                    </div>
+                    <div className="tcb-type" data-job-type>
+                      {job.type}
+                    </div>
                   </td>
                   <td className="tcb-cell">
-                    <span className="tcb-pay">{job.salary}</span>
+                    <span className="tcb-pay" data-job-salary>
+                      {job.salary}
+                    </span>
                   </td>
                   <td className="tcb-cell">
-                    <a className="tcb-apply" href={job.applyUrl}>
+                    <a
+                      className="tcb-apply"
+                      href={job.applyUrl}
+                      data-job-url
+                    >
                       Apply
                     </a>
                   </td>
