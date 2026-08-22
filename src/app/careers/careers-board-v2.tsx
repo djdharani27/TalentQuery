@@ -1,319 +1,380 @@
 "use client";
 
-import { useState } from "react";
-
-const DEPARTMENTS = [
+const OPEN_POSITIONS = [
   {
     department: "Engineering",
-    jobs: [
-      {
-        title: "Senior Full Stack Engineer",
-        place: "Remote",
-        type: "Full-time",
-        salary: "$140k – $170k",
-        blurb:
-          "Build scalable microservices and React web applications for enterprise clients.",
-        applyUrl: "/jobs/tc-101-senior-full-stack-engineer",
-      },
-    ],
+    title: "Senior Full Stack Engineer",
+    location: "Remote",
+    type: "Full-time",
+    salary: "$140k - $170k",
+    description:
+      "Build scalable microservices and React web applications for enterprise clients.",
+    applyUrl: "/apply/tc-101-senior-full-stack-engineer",
   },
   {
-    department: "Engineering",
-    jobs: [
-      {
-        title: "Backend Engineer",
-        place: "New York, NY",
-        type: "Full-time",
-        salary: "$135k – $165k",
-        blurb:
-          "Design and build reliable backend services, APIs, and distributed systems.",
-        applyUrl: "/jobs/tc-102-backend-engineer",
-      },
-    ],
+    department: "Data & AI",
+    title: "Machine Learning Specialist",
+    location: "New York, NY",
+    type: "Full-time",
+    salary: "$160k - $190k",
+    description:
+      "Develop and optimize LLM pipelines and predictive data models.",
+    applyUrl: "/apply/tc-102-machine-learning-specialist",
   },
   {
-    department: "Engineering",
-    jobs: [
-      {
-        title: "Frontend Engineer",
-        place: "San Francisco, CA",
-        type: "Full-time",
-        salary: "$130k – $160k",
-        blurb:
-          "Build fast, accessible, and responsive web applications using modern frontend technologies.",
-        applyUrl: "/jobs/tc-103-frontend-engineer",
-      },
-    ],
+    department: "Product",
+    title: "Lead Product Manager",
+    location: "San Francisco, CA",
+    type: "Full-time",
+    salary: "$150k - $180k",
+    description:
+      "Drive the product roadmap for our core cloud infrastructure products.",
+    applyUrl: "/apply/tc-103-lead-product-manager",
   },
   {
-    department: "Engineering",
-    jobs: [
-      {
-        title: "DevOps Engineer",
-        place: "Remote",
-        type: "Full-time",
-        salary: "$135k – $165k",
-        blurb:
-          "Build and maintain cloud infrastructure, CI/CD pipelines, and developer tooling.",
-        applyUrl: "/jobs/tc-104-devops-engineer",
-      },
-    ],
+    department: "Security",
+    title: "DevSecOps Engineer",
+    location: "Remote",
+    type: "Full-time",
+    salary: "$135k - $165k",
+    description:
+      "Implement automated CI/CD security checks and cloud environment compliance.",
+    applyUrl: "/apply/tc-104-devsecops-engineer",
   },
   {
-    department: "Engineering",
-    jobs: [
-      {
-        title: "Staff Software Engineer",
-        place: "Austin, TX",
-        type: "Full-time",
-        salary: "$160k – $200k",
-        blurb:
-          "Lead technical architecture and engineering initiatives across our core platform.",
-        applyUrl: "/jobs/tc-105-staff-software-engineer",
-      },
-    ],
+    department: "Design",
+    title: "Principal UX/UI Designer",
+    location: "Austin, TX",
+    type: "Full-time",
+    salary: "$130k - $155k",
+    description:
+      "Lead user research and shape our design system across all platform products.",
+    applyUrl: "/apply/tc-105-principal-uxui-designer",
   },
 ];
 
 export default function CareersBoardV2() {
-  const [openDept, setOpenDept] = useState<string | null>("Engineering");
-
   return (
-    <div className="tcv-page">
+    <main className="career-page-v2">
       <style>{`
-        .tcv-page {
-          font-family: Georgia, "Times New Roman", serif;
-          background: #faf7f2;
-          color: #23201c;
+        .career-page-v2 {
           min-height: 100vh;
-          padding: 56px 24px;
+          background: #f5f7fb;
+          color: #172033;
+          font-family:
+            Inter,
+            ui-sans-serif,
+            system-ui,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            sans-serif;
+          padding: 52px 24px 70px;
         }
 
-        .tcv-container {
-          max-width: 760px;
+        .career-container-v2 {
+          width: 100%;
+          max-width: 1120px;
           margin: 0 auto;
         }
 
-        .tcv-masthead {
-          text-align: center;
-          margin-bottom: 44px;
-        }
-
-        .tcv-logo {
-          display: inline-block;
-          width: 44px;
-          height: 44px;
-          line-height: 44px;
-          border-radius: 50%;
-          background: #23201c;
-          color: #faf7f2;
-          font-size: 18px;
-          margin-bottom: 14px;
-        }
-
-        .tcv-heading {
-          font-size: 36px;
-          font-weight: normal;
-          letter-spacing: 0.5px;
-          margin: 0;
-        }
-
-        .tcv-tagline {
-          font-style: italic;
-          color: #7a7367;
-          margin-top: 8px;
-        }
-
-        .tcv-group {
-          margin-bottom: 30px;
-        }
-
-        .tcv-group > h2 {
-          font-size: 14px;
-          text-transform: uppercase;
-          letter-spacing: 3px;
-          color: #9c5228;
-          border-bottom: 2px solid #e5ddcf;
-          padding-bottom: 8px;
-          margin-bottom: 14px;
-        }
-
-        .tcv-vacancy {
-          background: #ffffff;
-          border: 1px solid #e5ddcf;
-          border-radius: 8px;
-          margin-bottom: 10px;
-          overflow: hidden;
-          cursor: pointer;
-        }
-
-        .tcv-summary {
-          padding: 18px 20px;
+        .career-header-v2 {
           display: flex;
           justify-content: space-between;
+          align-items: flex-start;
+          gap: 30px;
+          margin-bottom: 42px;
+        }
+
+        .career-brand-v2 {
+          display: flex;
           align-items: center;
-          gap: 16px;
+          gap: 12px;
+          margin-bottom: 22px;
         }
 
-        .tcv-vacancy[data-open="true"] .tcv-summary {
-          border-bottom: 1px dashed #e5ddcf;
-        }
-
-        .tcv-name {
-          font-size: 19px;
-        }
-
-        .tcv-place {
+        .career-mark-v2 {
+          width: 38px;
+          height: 38px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 10px;
+          background: #172033;
+          color: #ffffff;
           font-size: 13px;
-          color: #7a7367;
-          font-style: italic;
-          margin-top: 2px;
+          font-weight: 800;
+          letter-spacing: 0.5px;
         }
 
-        .tcv-chev {
-          font-size: 12px;
-          color: #b0a689;
+        .career-company-v2 {
+          font-size: 17px;
+          font-weight: 700;
+          letter-spacing: -0.2px;
         }
 
-        .tcv-body {
-          padding: 18px 20px 22px;
+        .career-header-left-v2 h1 {
+          margin: 0;
+          font-size: 38px;
+          line-height: 1.15;
+          letter-spacing: -1.2px;
+          color: #111827;
         }
 
-        .tcv-blurb {
+        .career-header-left-v2 p {
+          max-width: 620px;
+          margin: 12px 0 0;
+          color: #687386;
           font-size: 15px;
-          line-height: 1.65;
-          color: #4a443b;
-          margin-bottom: 14px;
+          line-height: 1.7;
         }
 
-        .tcv-facts span {
-          display: inline-block;
-          font-size: 12.5px;
-          background: #f1eadd;
-          color: #6b5d43;
-          border-radius: 4px;
-          padding: 4px 10px;
-          margin-right: 8px;
-          margin-bottom: 6px;
+        .career-count-v2 {
+          flex-shrink: 0;
+          margin-top: 62px;
+          padding: 10px 15px;
+          border: 1px solid #dce2eb;
+          border-radius: 8px;
+          background: #ffffff;
+          color: #667085;
+          font-size: 13px;
+          font-weight: 600;
         }
 
-        .tcv-cta {
-          display: inline-block;
-          margin-top: 12px;
-          font-size: 14px;
-          color: #9c5228;
-          border-bottom: 1px solid #9c5228;
-          text-decoration: none;
-          padding-bottom: 2px;
+        .positions-v2 {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 18px;
         }
 
-        .tcv-cta:hover {
-          color: #6f3a1c;
-          border-color: #6f3a1c;
+        .position-card-v2 {
+          display: flex;
+          flex-direction: column;
+          min-height: 285px;
+          padding: 24px;
+          border: 1px solid #dfe4ec;
+          border-radius: 12px;
+          background: #ffffff;
+          box-shadow: 0 2px 8px rgba(23, 32, 51, 0.035);
+          transition:
+            transform 0.18s ease,
+            box-shadow 0.18s ease,
+            border-color 0.18s ease;
         }
 
-        .tcv-colophon {
-          text-align: center;
+        .position-card-v2:hover {
+          transform: translateY(-2px);
+          border-color: #cbd4e2;
+          box-shadow: 0 10px 25px rgba(23, 32, 51, 0.08);
+        }
+
+        .position-top-v2 {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          margin-bottom: 22px;
+        }
+
+        .position-department-v2 {
+          display: inline-flex;
+          align-items: center;
+          padding: 5px 10px;
+          border-radius: 999px;
+          background: #eef2ff;
+          color: #4f46e5;
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.3px;
+        }
+
+        .position-number-v2 {
+          color: #a0a8b7;
           font-size: 12px;
-          color: #a39a89;
-          margin-top: 40px;
-          font-style: italic;
+          font-weight: 600;
+        }
+
+        .position-main-v2 {
+          flex: 1;
+        }
+
+        .position-title-v2 {
+          margin: 0;
+          color: #111827;
+          font-size: 20px;
+          line-height: 1.35;
+          letter-spacing: -0.35px;
+        }
+
+        .position-description-v2 {
+          margin: 10px 0 0;
+          color: #697586;
+          font-size: 14px;
+          line-height: 1.65;
+        }
+
+        .position-details-v2 {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 20px;
+        }
+
+        .position-detail-v2 {
+          padding: 6px 9px;
+          border-radius: 6px;
+          background: #f5f7fa;
+          color: #596579;
+          font-size: 12px;
+          border: 1px solid #e8ebf0;
+        }
+
+        .position-footer-v2 {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 20px;
+          margin-top: 24px;
+          padding-top: 18px;
+          border-top: 1px solid #edf0f4;
+        }
+
+        .position-salary-v2 {
+          color: #374151;
+          font-size: 13px;
+          font-weight: 600;
+        }
+
+        .position-link-v2 {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          padding: 9px 14px;
+          border-radius: 7px;
+          background: #172033;
+          color: #ffffff;
+          font-size: 12.5px;
+          font-weight: 700;
+          text-decoration: none;
+          transition: background 0.18s ease;
+        }
+
+        .position-link-v2:hover {
+          background: #2b3852;
+        }
+
+        .career-footer-v2 {
+          margin-top: 36px;
+          padding-top: 22px;
+          border-top: 1px solid #dfe4ec;
+          color: #8a94a5;
+          font-size: 12px;
+          line-height: 1.6;
+        }
+
+        @media (max-width: 760px) {
+          .career-page-v2 {
+            padding: 35px 16px 50px;
+          }
+
+          .career-header-v2 {
+            flex-direction: column;
+            margin-bottom: 30px;
+          }
+
+          .career-header-left-v2 h1 {
+            font-size: 32px;
+          }
+
+          .career-count-v2 {
+            margin-top: 0;
+          }
+
+          .positions-v2 {
+            grid-template-columns: 1fr;
+          }
         }
       `}</style>
 
-      <div className="tcv-container">
-        <header className="tcv-masthead">
-          <span className="tcv-logo">TC</span>
+      <div className="career-container-v2">
+        <header className="career-header-v2">
+          <div className="career-header-left-v2">
+            <div className="career-brand-v2">
+              <span className="career-mark-v2">TC</span>
+              <span className="career-company-v2">TechCorp</span>
+            </div>
 
-          <h1 className="tcv-heading">
-            Engineering Careers at TechCorp
-          </h1>
+            <h1>Build what comes next.</h1>
 
-          <p className="tcv-tagline">
-            Five engineering roles. One mission. Endless curiosity.
-          </p>
+            <p>
+              Join our team and help build products used by ambitious
+              organizations around the world. Explore our current opportunities
+              below.
+            </p>
+          </div>
+
+          <div className="career-count-v2">
+            {OPEN_POSITIONS.length} open positions
+          </div>
         </header>
 
-        {DEPARTMENTS.map((group, groupIndex) => {
-          const isOpen = openDept === `${group.department}-${groupIndex}`;
-
-          return (
-            <section
-              className="tcv-group"
-              data-department={group.department}
-              key={`${group.department}-${groupIndex}`}
+        <section className="positions-v2">
+          {OPEN_POSITIONS.map((job, index) => (
+            <article
+              className="position-card-v2"
+              key={job.applyUrl}
             >
-              <h2>{group.department}</h2>
+              <div className="position-top-v2">
+                <span className="position-department-v2">
+                  {job.department}
+                </span>
 
-              {group.jobs.map((job) => (
-                <article
-                  className="tcv-vacancy"
-                  data-open={isOpen}
-                  key={job.applyUrl}
-                  data-job-row
-                  data-job-department={group.department}
-                  onClick={() =>
-                    setOpenDept(
-                      isOpen
-                        ? null
-                        : `${group.department}-${groupIndex}`
-                    )
-                  }
+                <span className="position-number-v2">
+                  0{index + 1}
+                </span>
+              </div>
+
+              <div className="position-main-v2">
+                <h2 className="position-title-v2">
+                  {job.title}
+                </h2>
+
+                <p className="position-description-v2">
+                  {job.description}
+                </p>
+
+                <div className="position-details-v2">
+                  <span className="position-detail-v2">
+                    {job.location}
+                  </span>
+
+                  <span className="position-detail-v2">
+                    {job.type}
+                  </span>
+                </div>
+              </div>
+
+              <div className="position-footer-v2">
+                <span className="position-salary-v2">
+                  {job.salary}
+                </span>
+
+                <a
+                  className="position-link-v2"
+                  href={job.applyUrl}
                 >
-                  <div className="tcv-summary">
-                    <div>
-                      <div className="tcv-name" data-job-title>
-                        {job.title}
-                      </div>
+                  View role
+                  <span aria-hidden="true">→</span>
+                </a>
+              </div>
+            </article>
+          ))}
+        </section>
 
-                      <div className="tcv-place" data-job-location>
-                        {job.place}
-                      </div>
-                    </div>
-
-                    <span className="tcv-chev">
-                      {isOpen ? "▲" : "▼"}
-                    </span>
-                  </div>
-
-                  {isOpen && (
-                    <div
-                      className="tcv-body"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <p
-                        className="tcv-blurb"
-                        data-job-description
-                      >
-                        {job.blurb}
-                      </p>
-
-                      <div className="tcv-facts">
-                        <span data-job-type>{job.type}</span>
-                        <span data-job-salary>{job.salary}</span>
-                      </div>
-
-                      <br />
-
-                      <a
-                        className="tcv-cta"
-                        href={job.applyUrl}
-                        data-job-url
-                      >
-                        Submit application →
-                      </a>
-                    </div>
-                  )}
-                </article>
-              ))}
-            </section>
-          );
-        })}
-
-        <footer className="tcv-colophon">
-          Engineering Careers — TechCorp is an equal opportunity employer.
+        <footer className="career-footer-v2">
+          TechCorp Careers · We are an equal opportunity employer.
         </footer>
       </div>
-    </div>
+    </main>
   );
 }
