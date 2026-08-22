@@ -317,7 +317,7 @@ export class BrightDataClient {
 
     const { data } = await this.http.post(
       `/dca/collectors/${collectorId}/refactor_template`,
-      { prompt }
+      { prompt: prompt.slice(0, 1000) }
     );
 
     logger.info("Self-healing triggered", {
@@ -336,7 +336,7 @@ export class BrightDataClient {
     const { pollIntervalMs = 10000, maxAttempts = 90 } = opts;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const progress = await this.getAIJobProgress(collectorId);
+      const progress = await this.getSelfHealingProgress(collectorId);
 
       if (progress.status === "done") return progress;
       if (progress.status === "pending_answer") {
@@ -369,10 +369,17 @@ export class BrightDataClient {
     );
   }
 
+  async getSelfHealingProgress(collectorId: string): Promise<AIJobProgress> {
+    const { data } = await this.http.get<AIJobProgress>(
+      `/dca/collectors/${collectorId}/refactor_template/progress`
+    );
+    return data;
+  }
+
   private async approveSelfHealing(collectorId: string): Promise<void> {
     await this.http.post(
-      `/dca/collectors/${collectorId}/automate_template/progress`,
-      { approve: true }
+      `/dca/collectors/${collectorId}/resume_automation_job`,
+      { message: true, auto_save: true }
     );
   }
 }
