@@ -30,7 +30,7 @@ export function calculateHealthScore(ctx: HealthContext): HealthScore {
   // 1. Did the request succeed? (raw result exists)
   checks.push({
     name: "request_succeeded",
-    passed: ctx.rawResult.length > 0 || ctx.jobs.length >= 0,
+    passed: ctx.rawResult.length > 0,
     detail: ctx.rawResult.length > 0 ? "Data received" : "No data received",
     weight: WEIGHTS.requestSucceeded,
   });

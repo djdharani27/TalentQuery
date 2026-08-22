@@ -42,7 +42,7 @@ const STATUS_LABELS: Record<string, string> = {
   broken: "Scraper broken",
   self_healing: "Self-healing in progress...",
   healing_failed: "Healing failed",
-  error: "Error occurred",
+  error: "Scrape failed",
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -56,6 +56,7 @@ function StatusBadge({ status }: { status: string }) {
     scraping: "badge-healing",
     validating: "badge-healing",
     healing_failed: "badge-broken",
+    error: "badge-broken",
   };
   return (
     <span className={`badge ${classMap[status] || "badge-default"}`}>
@@ -99,6 +100,7 @@ export default function Home() {
   const [scraping, setScraping] = useState(false);
   const [statusPolling, setStatusPolling] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollAttemptRef = useRef(0);
 
   const pollStatus = useCallback(async (companyId: string) => {
     try {
@@ -113,12 +115,14 @@ export default function Home() {
               }
             : prev
         );
-        // Stop polling if status is stable
-        if (
-          ["healthy", "suspicious", "broken", "healing_failed"].includes(
-            data.status
-          )
-        ) {
+        // Stop polling if status is stable (not actively processing)
+        const activeStatuses = [
+          "discovering",
+          "creating_scraper",
+          "scraping",
+          "self_healing",
+        ];
+        if (!activeStatuses.includes(data.status)) {
           return true; // stop
         }
       }
@@ -130,7 +134,19 @@ export default function Home() {
 
   useEffect(() => {
     if (statusPolling && result?.company.id) {
-      pollRef.current = setInterval(async () => {
+      // Poll immediately, then every 3 seconds
+      const MAX_POLL_ATTEMPTS = 40; // ~2 minutes at 3s interval
+
+      const poll = async () => {
+        pollAttemptRef.current += 1;
+
+        if (pollAttemptRef.current > MAX_POLL_ATTEMPTS) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          setStatusPolling(false);
+          setError("Scrape is taking longer than expected. Check back shortly.");
+          return;
+        }
+
         const shouldStop = await pollStatus(result.company.id);
         if (shouldStop && pollRef.current) {
           clearInterval(pollRef.current);
@@ -144,7 +160,13 @@ export default function Home() {
             );
           }
         }
-      }, 3000);
+      };
+
+      // Initial poll
+      poll();
+
+      // Set up interval
+      pollRef.current = setInterval(poll, 3000);
     }
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
@@ -193,28 +215,9 @@ export default function Home() {
         throw new Error(data.error || "Scrape failed");
       }
 
-      const data = await res.json();
-      setResult((prev) =>
-        prev ? { ...prev, jobs: data.jobs } : prev
-      );
-
-      // Start polling for status updates (healing may be in progress)
-      if (data.healingTriggered) {
-        setStatusPolling(true);
-      }
-
-      // Refresh company status
-      const statusRes = await fetch(
-        `/api/companies/${result.company.id}/status`
-      );
-      if (statusRes.ok) {
-        const statusData = await statusRes.json();
-        setResult((prev) =>
-          prev
-            ? { ...prev, company: { ...prev.company, ...statusData } }
-            : prev
-        );
-      }
+      // API returns immediately - start polling for status updates
+      pollAttemptRef.current = 0;
+      setStatusPolling(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Scrape failed");
     } finally {
@@ -275,7 +278,7 @@ export default function Home() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              placeholder="Enter a company name (e.g. Cursor, Stripe, OpenAI)"
+              placeholder="Company name, domain, or URL (e.g. Cursor, hex.tech, https://nozomio.com/careers)"
               disabled={loading}
             />
             <button
@@ -412,9 +415,11 @@ export default function Home() {
                     disabled={scraping || statusPolling}
                   >
                     {scraping
-                      ? "Scraping..."
+                      ? "Starting..."
                       : statusPolling
-                        ? "Healing..."
+                        ? result.company.status === "self_healing"
+                          ? "Healing..."
+                          : "Scraping..."
                         : result.isNew
                           ? "Start Scraping"
                           : "Refresh Jobs"}
@@ -431,7 +436,7 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Healing Status */}
+              {/* Processing Status */}
               {statusPolling && (
                 <div className="card p-4 border-blue-900/50 bg-blue-950/20">
                   <div className="flex items-center gap-3">
@@ -456,11 +461,18 @@ export default function Home() {
                     </svg>
                     <div>
                       <p className="text-sm font-medium text-blue-300">
-                        Self-healing in progress
+                        {result.company.status === "self_healing"
+                          ? "Self-healing in progress"
+                          : result.company.status === "scraping"
+                            ? "Scraping in progress"
+                            : result.company.status === "creating_scraper"
+                              ? "Creating scraper"
+                              : "Processing..."}
                       </p>
                       <p className="text-xs text-neutral-400">
-                        The scraper detected a problem and is automatically
-                        repairing itself. This page will update when complete.
+                        {result.company.status === "self_healing"
+                          ? "The scraper detected a problem and is automatically repairing itself."
+                          : "This page will update automatically when complete."}
                       </p>
                     </div>
                   </div>
@@ -535,7 +547,8 @@ export default function Home() {
                 !scraping &&
                 !statusPolling &&
                 result.company.status !== "discovering" &&
-                result.company.status !== "creating_scraper" && (
+                result.company.status !== "creating_scraper" &&
+                result.company.status !== "scraping" && (
                   <div className="card p-8 text-center">
                     <p className="text-neutral-400">
                       {result.isNew

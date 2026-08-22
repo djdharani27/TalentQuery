@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { logger } from "@/lib/logger";
 import type { Job } from "@/lib/types";
 
 const RawJobSchema = z.record(z.string(), z.unknown());
@@ -100,25 +101,86 @@ function normalizeSingleJob(raw: Record<string, unknown>): Job | null {
 export function normalizeJobs(rawData: unknown[]): Job[] {
   const jobs: Job[] = [];
 
+  logger.info("Normalizing jobs", {
+    operation: "normalize",
+    raw_count: rawData.length,
+  });
+
   for (const item of rawData) {
-    if (!item || typeof item !== "object") continue;
+    if (!item || typeof item !== "object") {
+      logger.debug("Skipping non-object item", {
+        operation: "normalize",
+        item_type: typeof item,
+      });
+      continue;
+    }
 
     const parsed = RawJobSchema.safeParse(item);
-    if (!parsed.success) continue;
+    if (!parsed.success) {
+      logger.debug("Skipping invalid schema", {
+        operation: "normalize",
+        errors: parsed.error.issues,
+      });
+      continue;
+    }
 
     const job = normalizeSingleJob(parsed.data);
-    if (job) jobs.push(job);
+    if (job) {
+      jobs.push(job);
+    } else {
+      logger.debug("Skipping job without title", {
+        operation: "normalize",
+        raw_keys: Object.keys(parsed.data),
+      });
+    }
   }
+
+  logger.info("Normalization complete", {
+    operation: "normalize",
+    jobs_count: jobs.length,
+  });
 
   return jobs;
 }
 
 export function extractRawJobs(data: unknown): unknown[] {
-  if (Array.isArray(data)) return data;
+  logger.info("Extracting raw jobs", {
+    operation: "extract",
+    data_type: typeof data,
+    is_array: Array.isArray(data),
+  });
+
+  if (Array.isArray(data)) {
+    logger.info("Data is array", {
+      operation: "extract",
+      count: data.length,
+    });
+    return data;
+  }
+
   if (data && typeof data === "object") {
     const values = Object.values(data);
     const arr = values.find((v) => Array.isArray(v));
-    if (arr) return arr;
+    if (arr) {
+      logger.info("Found array in object", {
+        operation: "extract",
+        count: (arr as unknown[]).length,
+        keys: Object.keys(data as Record<string, unknown>),
+      });
+      return arr;
+    }
+
+    logger.warn("No array found in object", {
+      operation: "extract",
+      keys: Object.keys(data as Record<string, unknown>),
+      sample: JSON.stringify(data).slice(0, 200),
+    });
   }
+
+  logger.warn("No extractable data", {
+    operation: "extract",
+    data_type: typeof data,
+  });
+
   return [];
 }

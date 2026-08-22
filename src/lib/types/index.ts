@@ -150,7 +150,11 @@ export interface BrightDataTriggerResponse {
 
 export type BrightDataDatasetResponse =
   | unknown[]
-  | { status: string; message?: string };
+  | { status: string; message?: string }
+  | { data: unknown[] }
+  | { results: unknown[] }
+  | { snapshot_id: string; status?: string }
+  | Record<string, unknown>;
 
 export interface AIJobProgress {
   step?: string;

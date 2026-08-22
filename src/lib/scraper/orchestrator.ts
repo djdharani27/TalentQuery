@@ -25,37 +25,59 @@ export async function executeScrape(company: Company): Promise<{
   const client = new BrightDataClient(env.brightdata.apiToken);
   const db = getSupabase();
 
-  // Ensure scraper exists
-  await updateCompanyStatus(company.id, "scraping");
-  const scraperId = await ensureScraper(company, client);
-
-  // Create scraper run record
-  const { data: runRecord } = await db
-    .from("scraper_runs")
-    .insert({
-      company_id: company.id,
-      scraper_id: scraperId,
-      status: "running",
-    })
-    .select()
-    .single();
-
+  let scraperId: string | null = null;
+  let runRecord: Record<string, unknown> | null = null;
   let rawResult: unknown[] = [];
   let jobs: Job[] = [];
   let failureReason: string | null = null;
 
   try {
+    // Ensure scraper exists
+    await updateCompanyStatus(company.id, "scraping");
+    scraperId = await ensureScraper(company, client);
+
+    // Create scraper run record
+    const { data } = await db
+      .from("scraper_runs")
+      .insert({
+        company_id: company.id,
+        scraper_id: scraperId,
+        status: "running",
+      })
+      .select()
+      .single();
+    runRecord = data;
+
     // Trigger scraper
     if (!company.careers_url) throw new Error("No careers URL");
+
+    logger.info("Triggering scraper", {
+      operation: "scrape",
+      company: company.name,
+      scraper_id: scraperId,
+      url: company.careers_url,
+    });
 
     const triggerResult = await client.trigger(scraperId, [
       { url: company.careers_url },
     ]);
 
+    logger.info("Scraper triggered, waiting for results", {
+      operation: "scrape",
+      company: company.name,
+      collection_id: triggerResult.collection_id,
+    });
+
     // Wait for results
     rawResult = await client.waitForDataset(triggerResult.collection_id, {
       pollIntervalMs: 5000,
       maxAttempts: 120,
+    });
+
+    logger.info("Raw results received", {
+      operation: "scrape",
+      company: company.name,
+      raw_count: rawResult.length,
     });
 
     // Normalize results
@@ -76,7 +98,7 @@ export async function executeScrape(company: Company): Promise<{
       operation: "scrape",
       company: company.name,
       company_id: company.id,
-      scraper_id: scraperId,
+      scraper_id: scraperId ?? undefined,
       error: failureReason,
     });
   }
@@ -89,25 +111,50 @@ export async function executeScrape(company: Company): Promise<{
     previousHealthScore: company.last_health_score,
   });
 
-  // Update scraper run
-  await db
-    .from("scraper_runs")
-    .update({
-      status: failureReason ? "failed" : "completed",
-      result_count: jobs.length,
-      health_score: health.score,
-      validation_status: health.status,
-      failure_reason: failureReason,
-      raw_result: rawResult.slice(0, 10), // Store sample, not full result
-      completed_at: new Date().toISOString(),
-    })
-    .eq("id", runRecord.id);
+  logger.info("Health score calculated", {
+    operation: "scrape",
+    company: company.name,
+    health_score: health.score,
+    health_status: health.status,
+    job_count: jobs.length,
+  });
+
+  // Update scraper run if it was created
+  if (runRecord) {
+    await db
+      .from("scraper_runs")
+      .update({
+        status: failureReason ? "failed" : "completed",
+        result_count: jobs.length,
+        health_score: health.score,
+        validation_status: health.status,
+        failure_reason: failureReason,
+        raw_result: rawResult.slice(0, 10),
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", runRecord.id);
+  }
 
   // Save jobs if healthy
   let healingTriggered = false;
 
   if (health.status === "healthy" || health.status === "suspicious") {
+    logger.info("Saving jobs to database", {
+      operation: "scrape",
+      company: company.name,
+      job_count: jobs.length,
+    });
+
     await saveJobs(company.id, jobs);
+
+    logger.info("Updating company status", {
+      operation: "scrape",
+      company: company.name,
+      status: health.status === "healthy" ? "healthy" : "suspicious",
+      job_count: jobs.length,
+      health_score: health.score,
+    });
+
     await updateCompanyStatus(company.id, health.status === "healthy" ? "healthy" : "suspicious", {
       last_scrape_at: new Date().toISOString(),
       last_successful_scrape_at:
@@ -116,17 +163,18 @@ export async function executeScrape(company: Company): Promise<{
           : company.last_successful_scrape_at,
       last_job_count: jobs.length,
       last_health_score: health.score,
-      healing_attempts: 0, // Reset on success
+      healing_attempts: 0,
     });
   } else if (
     health.status === "broken" &&
+    !failureReason &&
     company.healing_attempts < MAX_HEALING_ATTEMPTS
   ) {
-    // Trigger self-healing
     healingTriggered = true;
-    await triggerSelfHealing(company, scraperId, health, rawResult, client);
-  } else if (health.status === "broken") {
-    await updateCompanyStatus(company.id, "healing_failed", {
+    await triggerSelfHealing(company, scraperId!, health, rawResult, client);
+  } else {
+    // broken + max attempts reached, or failure
+    await updateCompanyStatus(company.id, failureReason ? "error" : "healing_failed", {
       last_scrape_at: new Date().toISOString(),
       last_health_score: health.score,
     });
@@ -134,7 +182,7 @@ export async function executeScrape(company: Company): Promise<{
 
   return {
     jobs,
-    run: { ...runRecord, status: failureReason ? "failed" : "completed" } as ScraperRun,
+    run: { ...(runRecord || {}), status: failureReason ? "failed" : "completed" } as ScraperRun,
     healthScore: health.score,
     healingTriggered,
   };

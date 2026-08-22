@@ -100,6 +100,9 @@ export async function ensureScraper(
     company_id: company.id,
   });
 
+  // Update status to creating_scraper
+  await updateCompanyStatus(company.id, "creating_scraper");
+
   // Create scraper template via Bright Data API
   const collector = await client.createCollector(
     `${company.name} Careers`
@@ -125,7 +128,6 @@ export async function ensureScraper(
     .from("companies")
     .update({
       scraper_id: collector.id,
-      status: "healthy",
     })
     .eq("id", company.id);
 

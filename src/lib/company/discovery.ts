@@ -113,12 +113,28 @@ async function findCareersPage(domain: string): Promise<string | null> {
 }
 
 export async function discoverCompany(
-  name: string
+  name: string,
+  hintDomain?: string
 ): Promise<DiscoveryResult> {
   const start = Date.now();
-  logger.info("Discovering company", { operation: "discovery", company: name });
+  logger.info("Discovering company", { operation: "discovery", company: name, hintDomain });
 
-  const domain = guessDomain(name);
+  // If a domain hint is provided, try it first
+  if (hintDomain) {
+    const careersUrl = await findCareersPage(hintDomain);
+    if (careersUrl) {
+      logger.info("Company discovered (from domain hint)", {
+        operation: "discovery",
+        company: name,
+        domain: hintDomain,
+        careersUrl,
+        duration_ms: Date.now() - start,
+      });
+      return { name, domain: hintDomain, careersUrl };
+    }
+  }
+
+  const domain = hintDomain || guessDomain(name);
   const careersUrl = await findCareersPage(domain);
 
   if (!careersUrl) {
@@ -126,6 +142,7 @@ export async function discoverCompany(
     const alternatives = [
       `${name.toLowerCase().replace(/\s+/g, "")}.io`,
       `${name.toLowerCase().replace(/\s+/g, "")}.co`,
+      `${name.toLowerCase().replace(/\s+/g, "")}.tech`,
       `get${name.toLowerCase().replace(/\s+/g, "")}.com`,
       `${name.toLowerCase().replace(/\s+/g, "-")}.com`,
     ];

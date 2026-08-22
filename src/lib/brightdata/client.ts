@@ -73,21 +73,135 @@ export class BrightDataClient {
     opts: {
       pollIntervalMs?: number;
       maxAttempts?: number;
+      maxDurationMs?: number;
     } = {}
   ): Promise<unknown[]> {
-    const { pollIntervalMs = 5000, maxAttempts = 120 } = opts;
+    const {
+      pollIntervalMs = 5000,
+      maxAttempts = 120,
+      maxDurationMs = 10 * 60 * 1000,
+    } = opts;
+    const start = Date.now();
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (Date.now() - start >= maxDurationMs) {
+        throw new Error(
+          `Timed out waiting for snapshot ${snapshotId} after ${maxDurationMs}ms`
+        );
+      }
+
       const data = await this.fetchDataset(snapshotId);
 
+      // Log the raw response for debugging
+      if (attempt <= 5 || attempt % 10 === 0) {
+        logger.info("Dataset poll response", {
+          operation: "dataset_poll",
+          snapshot_id: snapshotId,
+          attempt,
+          data_type: typeof data,
+          is_array: Array.isArray(data),
+          sample: JSON.stringify(data).slice(0, 200),
+        });
+      }
+
+      // A JSON array (including an empty array) means the snapshot is finished.
       if (Array.isArray(data)) {
+        logger.info("Dataset ready", {
+          operation: "dataset_poll",
+          snapshot_id: snapshotId,
+          attempt,
+          result_count: data.length,
+        });
         return data;
       }
 
       if (data && typeof data === "object") {
-        const values = Object.values(data);
-        const arr = values.find((v) => Array.isArray(v));
-        if (arr) return arr as unknown[];
+        const dataObj = data as Record<string, unknown>;
+
+        // Check for a nested results array. Bright Data's AI-generated
+        // collectors often wrap rows under a schema-specific key such as
+        // `job_listings`, so treat any array value as the finished dataset.
+        for (const key of [
+          "data",
+          "results",
+          "items",
+          "records",
+          "job_listings",
+          "jobs",
+          "listings",
+          "rows",
+        ]) {
+          const nested = dataObj[key];
+          if (Array.isArray(nested)) {
+            logger.info(`Dataset ready (from ${key})`, {
+              operation: "dataset_poll",
+              snapshot_id: snapshotId,
+              attempt,
+              result_count: nested.length,
+            });
+            return nested;
+          }
+        }
+
+        // Bright Data uses different status vocabularies across DCA endpoints.
+        const status =
+          typeof dataObj.status === "string"
+            ? dataObj.status.toLowerCase()
+            : null;
+
+        if (status === "failed" || status === "canceled" || status === "error") {
+          const reason =
+            dataObj.message ?? dataObj.error ?? dataObj.status;
+          throw new Error(`Snapshot ${snapshotId} ${status}${reason ? `: ${reason}` : ""}`);
+        }
+
+        // Terminal success with no rows is a valid empty result. Returning here
+        // stops the poll loop instead of waiting until maxAttempts.
+        if (
+          status === "ready" ||
+          status === "done" ||
+          status === "completed"
+        ) {
+          logger.info("Dataset finished with no rows", {
+            operation: "dataset_poll",
+            snapshot_id: snapshotId,
+            attempt,
+            status,
+          });
+          return [];
+        }
+
+        if (dataObj.error) {
+          throw new Error(`Dataset error: ${dataObj.error}`);
+        }
+
+        // Fall back to any non-empty nested array, matching the legacy client.
+        const arr = Object.values(dataObj).find(
+          (v) => Array.isArray(v) && (v as unknown[]).length > 0
+        );
+        if (arr) {
+          logger.info("Dataset ready (from object)", {
+            operation: "dataset_poll",
+            snapshot_id: snapshotId,
+            attempt,
+            result_count: (arr as unknown[]).length,
+          });
+          return arr as unknown[];
+        }
+
+        logger.debug("Dataset status", {
+          operation: "dataset_poll",
+          snapshot_id: snapshotId,
+          attempt,
+          status: status ?? "unknown",
+        });
+      } else {
+        logger.debug("Dataset not ready", {
+          operation: "dataset_poll",
+          snapshot_id: snapshotId,
+          attempt,
+          response_keys: [],
+        });
       }
 
       await sleep(pollIntervalMs);

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCompany } from "@/lib/scraper/registry";
+import { getCompany, updateCompanyStatus } from "@/lib/scraper/registry";
 import { executeScrape } from "@/lib/scraper/orchestrator";
 import { logger } from "@/lib/logger";
 
@@ -21,13 +21,20 @@ export async function POST(
       company_id: company.id,
     });
 
-    const result = await executeScrape(company);
+    // Start scrape in background (don't await)
+    executeScrape(company).catch((err) => {
+      logger.error("Background scrape failed", {
+        operation: "scrape_api",
+        company: company.name,
+        company_id: company.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
 
+    // Return immediately - frontend will poll for status
     return NextResponse.json({
-      jobs: result.jobs,
-      healthScore: result.healthScore,
-      healingTriggered: result.healingTriggered,
-      runId: result.run.id,
+      status: "scraping",
+      message: "Scrape started. Polling for results...",
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Internal server error";
