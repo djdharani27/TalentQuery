@@ -11,6 +11,7 @@ import type {
   ScraperRun,
   HealingRun,
   StoredJob,
+  BrightDataDatasetResult,
 } from "@/lib/types";
 
 const MAX_HEALING_ATTEMPTS = 2;
@@ -30,6 +31,7 @@ export async function executeScrape(company: Company): Promise<{
   let rawResult: unknown[] = [];
   let jobs: Job[] = [];
   let failureReason: string | null = null;
+  let datasetResult: BrightDataDatasetResult | null = null;
 
   try {
     // Ensure scraper exists
@@ -68,15 +70,22 @@ export async function executeScrape(company: Company): Promise<{
       collection_id: triggerResult.collection_id,
     });
 
-    // Wait for results
-    rawResult = await client.waitForDataset(triggerResult.collection_id, {
+    // Wait for results. `waitForDataset` now returns a structured result with
+    // the unwrapped rows and the raw Bright Data response for debugging.
+    datasetResult = await client.waitForDataset(triggerResult.collection_id, {
       pollIntervalMs: 5000,
       maxAttempts: 120,
     });
 
+    rawResult = datasetResult.rows;
+
     logger.info("Raw results received", {
       operation: "scrape",
       company: company.name,
+      collection_id: triggerResult.collection_id,
+      brightdata_state: datasetResult.state,
+      brightdata_status: datasetResult.statusValue,
+      brightdata_result_key: datasetResult.resultKey,
       raw_count: rawResult.length,
     });
 
@@ -129,7 +138,7 @@ export async function executeScrape(company: Company): Promise<{
         health_score: health.score,
         validation_status: health.status,
         failure_reason: failureReason,
-        raw_result: rawResult.slice(0, 10),
+        raw_result: buildRawResultForStorage(datasetResult, rawResult, jobs.length),
         completed_at: new Date().toISOString(),
       })
       .eq("id", runRecord.id);
@@ -470,4 +479,55 @@ export async function getHealingRuns(
     .limit(50);
 
   return (data ?? []) as HealingRun[];
+}
+
+// Keep only a compact, JSON-safe, secret-free debug snapshot of the Bright
+// Data result. The raw response does not contain the API token, but we still
+// avoid dumping unbounded data into the JSONB column.
+function buildRawResultForStorage(
+  datasetResult: BrightDataDatasetResult | null,
+  rawResult: unknown[],
+  normalizedJobCount: number
+): Record<string, unknown> {
+  const base: Record<string, unknown> = {
+    collection_id: datasetResult?.collectionId ?? null,
+    brightdata_state: datasetResult?.state ?? null,
+    brightdata_status: datasetResult?.statusValue ?? null,
+    brightdata_http_status: datasetResult?.httpStatus ?? null,
+    brightdata_result_key: datasetResult?.resultKey ?? null,
+    raw_row_count: rawResult.length,
+    normalized_job_count: normalizedJobCount,
+  };
+
+  // `raw_result` is JSONB and is also exposed via the status endpoint. Keep a
+  // small, bounded preview plus shape metadata for debugging without secrets.
+  const preview = rawResult.slice(0, 10);
+  base.raw_rows_preview = preview;
+  base.raw_shape = summarizeShape(datasetResult?.rawResponse);
+
+  return base;
+}
+
+function summarizeShape(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return {
+      type: "array",
+      length: value.length,
+      first_item_type: value[0] === null ? "null" : typeof value[0],
+      first_item_keys:
+        value[0] && typeof value[0] === "object"
+          ? Object.keys(value[0] as Record<string, unknown>)
+          : null,
+    };
+  }
+
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    return {
+      type: "object",
+      keys: Object.keys(obj),
+    };
+  }
+
+  return { type: value === null ? "null" : typeof value };
 }

@@ -148,13 +148,18 @@ export interface BrightDataTriggerResponse {
   start_eta?: number;
 }
 
-export type BrightDataDatasetResponse =
-  | unknown[]
-  | { status: string; message?: string }
-  | { data: unknown[] }
-  | { results: unknown[] }
-  | { snapshot_id: string; status?: string }
-  | Record<string, unknown>;
+export type BrightDataDatasetState = "completed" | "completed_empty";
+
+export interface BrightDataDatasetResult {
+  collectionId: string;
+  state: BrightDataDatasetState;
+  rows: unknown[];
+  rawResponse: unknown;
+  httpStatus: number;
+  resultKey: string | null;
+  statusValue: string | null;
+  message: string | null;
+}
 
 export interface AIJobProgress {
   step?: string;

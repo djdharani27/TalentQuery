@@ -2,7 +2,7 @@ import axios, { AxiosInstance } from "axios";
 import { logger } from "@/lib/logger";
 import type {
   BrightDataTriggerResponse,
-  BrightDataDatasetResponse,
+  BrightDataDatasetResult,
   BrightDataCollector,
   AIJobProgress,
 } from "@/lib/types";
@@ -60,12 +60,47 @@ export class BrightDataClient {
 
   async fetchDataset(
     snapshotId: string
-  ): Promise<BrightDataDatasetResponse> {
-    const { data } = await this.http.get<BrightDataDatasetResponse>(
-      "/dca/dataset",
-      { params: { id: snapshotId } }
-    );
-    return data;
+  ): Promise<RawDatasetResponse> {
+    const response = await this.http.get("/dca/dataset", {
+      params: { id: snapshotId },
+      validateStatus: () => true,
+      // Force the raw text body so we can log the exact bytes Bright Data sent
+      // and control JSON parsing ourselves.
+      responseType: "text",
+      transformResponse: [(body) => body],
+    });
+
+    const rawBody = typeof response.data === "string" ? response.data : "";
+    let parsed: unknown = null;
+    let parseError: string | null = null;
+
+    if (rawBody.trim()) {
+      const contentType = String(response.headers?.["content-type"] ?? "");
+      const parsedBody = parseDatasetBody(rawBody, contentType);
+      parsed = parsedBody.parsed;
+      parseError = parsedBody.error;
+    }
+
+    // Log the raw response without the token. Response headers never contain
+    // the Authorization header, but only include a couple of useful, safe ones.
+    logger.info("Dataset HTTP response", {
+      operation: "dataset_fetch",
+      snapshot_id: snapshotId,
+      http_status: response.status,
+      content_type: response.headers?.["content-type"] ?? null,
+      content_length: response.headers?.["content-length"] ?? null,
+      raw_body_length: rawBody.length,
+      raw_body: rawBody.slice(0, 500),
+      parsed_type: parsed === null ? "null" : Array.isArray(parsed) ? "array" : typeof parsed,
+      parse_error: parseError,
+    });
+
+    return {
+      httpStatus: response.status,
+      rawBody,
+      parsed,
+      parseError,
+    };
   }
 
   async waitForDataset(
@@ -75,7 +110,7 @@ export class BrightDataClient {
       maxAttempts?: number;
       maxDurationMs?: number;
     } = {}
-  ): Promise<unknown[]> {
+  ): Promise<BrightDataDatasetResult> {
     const {
       pollIntervalMs = 5000,
       maxAttempts = 120,
@@ -90,121 +125,96 @@ export class BrightDataClient {
         );
       }
 
-      const data = await this.fetchDataset(snapshotId);
+      const raw = await this.fetchDataset(snapshotId);
 
-      // Log the raw response for debugging
-      if (attempt <= 5 || attempt % 10 === 0) {
-        logger.info("Dataset poll response", {
-          operation: "dataset_poll",
-          snapshot_id: snapshotId,
-          attempt,
-          data_type: typeof data,
-          is_array: Array.isArray(data),
-          sample: JSON.stringify(data).slice(0, 200),
-        });
-      }
-
-      // A JSON array (including an empty array) means the snapshot is finished.
-      if (Array.isArray(data)) {
-        logger.info("Dataset ready", {
-          operation: "dataset_poll",
-          snapshot_id: snapshotId,
-          attempt,
-          result_count: data.length,
-        });
-        return data;
-      }
-
-      if (data && typeof data === "object") {
-        const dataObj = data as Record<string, unknown>;
-
-        // Check for a nested results array. Bright Data's AI-generated
-        // collectors often wrap rows under a schema-specific key such as
-        // `job_listings`, so treat any array value as the finished dataset.
-        for (const key of [
-          "data",
-          "results",
-          "items",
-          "records",
-          "job_listings",
-          "jobs",
-          "listings",
-          "rows",
-        ]) {
-          const nested = dataObj[key];
-          if (Array.isArray(nested)) {
-            logger.info(`Dataset ready (from ${key})`, {
-              operation: "dataset_poll",
-              snapshot_id: snapshotId,
-              attempt,
-              result_count: nested.length,
-            });
-            return nested;
-          }
-        }
-
-        // Bright Data uses different status vocabularies across DCA endpoints.
-        const status =
-          typeof dataObj.status === "string"
-            ? dataObj.status.toLowerCase()
-            : null;
-
-        if (status === "failed" || status === "canceled" || status === "error") {
-          const reason =
-            dataObj.message ?? dataObj.error ?? dataObj.status;
-          throw new Error(`Snapshot ${snapshotId} ${status}${reason ? `: ${reason}` : ""}`);
-        }
-
-        // Terminal success with no rows is a valid empty result. Returning here
-        // stops the poll loop instead of waiting until maxAttempts.
-        if (
-          status === "ready" ||
-          status === "done" ||
-          status === "completed"
-        ) {
-          logger.info("Dataset finished with no rows", {
-            operation: "dataset_poll",
-            snapshot_id: snapshotId,
-            attempt,
-            status,
-          });
-          return [];
-        }
-
-        if (dataObj.error) {
-          throw new Error(`Dataset error: ${dataObj.error}`);
-        }
-
-        // Fall back to any non-empty nested array, matching the legacy client.
-        const arr = Object.values(dataObj).find(
-          (v) => Array.isArray(v) && (v as unknown[]).length > 0
+      if (raw.httpStatus === 401) {
+        throw new Error(
+          `Bright Data authorization failed (401) while fetching snapshot ${snapshotId}`
         );
-        if (arr) {
-          logger.info("Dataset ready (from object)", {
+      }
+
+      if (raw.httpStatus === 404) {
+        throw new Error(
+          `Bright Data snapshot ${snapshotId} not found (404); it may have expired or the id is invalid`
+        );
+      }
+
+      // Transient server errors should be retried rather than treated as a
+      // completed or failed collection.
+      if (raw.httpStatus >= 500) {
+        logger.warn("Dataset poll got transient HTTP error", {
+          operation: "dataset_poll",
+          snapshot_id: snapshotId,
+          attempt,
+          http_status: raw.httpStatus,
+          raw_body: raw.rawBody.slice(0, 300),
+        });
+        await sleep(pollIntervalMs);
+        continue;
+      }
+
+      if (raw.parseError) {
+        logger.warn("Dataset response was not valid JSON", {
+          operation: "dataset_poll",
+          snapshot_id: snapshotId,
+          attempt,
+          http_status: raw.httpStatus,
+          parse_error: raw.parseError,
+          raw_body: raw.rawBody.slice(0, 300),
+        });
+        await sleep(pollIntervalMs);
+        continue;
+      }
+
+      const classification = classifyDataset(raw.parsed);
+
+      switch (classification.kind) {
+        case "completed": {
+          const rows = classification.rows;
+          logger.info("Dataset ready", {
             operation: "dataset_poll",
             snapshot_id: snapshotId,
             attempt,
-            result_count: (arr as unknown[]).length,
+            http_status: raw.httpStatus,
+            result_key: classification.resultKey,
+            result_count: rows.length,
           });
-          return arr as unknown[];
+          return {
+            collectionId: snapshotId,
+            state: rows.length > 0 ? "completed" : "completed_empty",
+            rows,
+            rawResponse: raw.parsed,
+            httpStatus: raw.httpStatus,
+            resultKey: classification.resultKey,
+            statusValue: classification.statusValue,
+            message: classification.message,
+          };
         }
-
-        logger.debug("Dataset status", {
-          operation: "dataset_poll",
-          snapshot_id: snapshotId,
-          attempt,
-          status: status ?? "unknown",
-        });
-      } else {
-        logger.debug("Dataset not ready", {
-          operation: "dataset_poll",
-          snapshot_id: snapshotId,
-          attempt,
-          response_keys: [],
-        });
+        case "pending": {
+          logger.debug("Dataset still building", {
+            operation: "dataset_poll",
+            snapshot_id: snapshotId,
+            attempt,
+            http_status: raw.httpStatus,
+            status: classification.statusValue ?? "unknown",
+            message: classification.message,
+          });
+          await sleep(pollIntervalMs);
+          continue;
+        }
+        case "failed": {
+          throw new Error(
+            `Bright Data snapshot ${snapshotId} ${classification.statusValue}` +
+              `${classification.message ? `: ${classification.message}` : ""}`
+          );
+        }
+        case "unrecognized": {
+          throw new Error(
+            `Bright Data snapshot ${snapshotId} returned an unrecognized response shape. ` +
+              `Raw body: ${raw.rawBody.slice(0, 500)}`
+          );
+        }
       }
-
-      await sleep(pollIntervalMs);
     }
 
     throw new Error(
@@ -369,4 +379,178 @@ export class BrightDataClient {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+interface ParsedDatasetBody {
+  parsed: unknown;
+  error: string | null;
+}
+
+// Bright Data's DCA dataset endpoint can return either a single JSON document
+// (array or object) or newline-delimited JSON (NDJSON / JSONL) when the
+// collector's output is a stream of records. JSON.parse fails on JSONL, so we
+// detect that case and return the records as an array.
+function parseDatasetBody(rawBody: string, contentType: string): ParsedDatasetBody {
+  try {
+    return { parsed: JSON.parse(rawBody), error: null };
+  } catch (jsonError) {
+    const isJsonLines =
+      /jsonl|ndjson|newline/i.test(contentType) ||
+      /^\s*\{[\s\S]*\}\s*\{/m.test(rawBody);
+
+    if (!isJsonLines) {
+      return {
+        parsed: null,
+        error: jsonError instanceof Error ? jsonError.message : String(jsonError),
+      };
+    }
+
+    const records: unknown[] = [];
+    for (const line of rawBody.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        records.push(JSON.parse(trimmed));
+      } catch (err) {
+        return {
+          parsed: null,
+          error: `Invalid JSONL record: ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    }
+
+    return { parsed: records, error: null };
+  }
+}
+
+interface RawDatasetResponse {
+  httpStatus: number;
+  rawBody: string;
+  parsed: unknown;
+  parseError: string | null;
+}
+
+type DatasetClassification =
+  | {
+      kind: "completed";
+      rows: unknown[];
+      resultKey: string | null;
+      statusValue: string | null;
+      message: string | null;
+    }
+  | {
+      kind: "pending";
+      statusValue: string | null;
+      message: string | null;
+    }
+  | {
+      kind: "failed";
+      statusValue: string | null;
+      message: string | null;
+    }
+  | {
+      kind: "unrecognized";
+    };
+
+const RESULT_KEYS = [
+  "job_listings",
+  "jobs",
+  "listings",
+  "data",
+  "results",
+  "items",
+  "records",
+  "rows",
+] as const;
+
+const PENDING_STATUSES = new Set([
+  "building",
+  "collecting",
+  "pending",
+  "running",
+  "queued",
+  "processing",
+  "in_progress",
+  "in-progress",
+]);
+
+const FAILED_STATUSES = new Set([
+  "failed",
+  "canceled",
+  "cancelled",
+  "error",
+]);
+
+const TERMINAL_STATUSES = new Set(["ready", "done", "completed", "success"]);
+
+function classifyDataset(data: unknown): DatasetClassification {
+  // The batch DCA endpoint returns the finished collection as a top-level JSON
+  // array (empty array means finished with zero rows), and a status object
+  // while it is still building.
+  if (Array.isArray(data)) {
+    return {
+      kind: "completed",
+      rows: data,
+      resultKey: null,
+      statusValue: null,
+      message: null,
+    };
+  }
+
+  if (!data || typeof data !== "object") {
+    return { kind: "unrecognized" };
+  }
+
+  const obj = data as Record<string, unknown>;
+
+  const statusValue =
+    typeof obj.status === "string" ? obj.status.toLowerCase() : null;
+  const message =
+    typeof obj.message === "string"
+      ? obj.message
+      : typeof obj.error === "string"
+        ? obj.error
+        : null;
+
+  // Explicit failed/canceled/error states must throw, even if another field
+  // looks like an array.
+  if (statusValue && FAILED_STATUSES.has(statusValue)) {
+    return { kind: "failed", statusValue, message };
+  }
+
+  // Inspect known array-bearing keys first. `job_listings` is what this
+  // project's collector actually returns per the captured dataset.
+  for (const key of RESULT_KEYS) {
+    const value = obj[key];
+    if (Array.isArray(value)) {
+      return {
+        kind: "completed",
+        rows: value,
+        resultKey: key,
+        statusValue,
+        message,
+      };
+    }
+  }
+
+  // A terminal success status with no known array key is a legitimate empty
+  // result. Don't mistake it for a still-building collection.
+  if (statusValue && TERMINAL_STATUSES.has(statusValue)) {
+    return {
+      kind: "completed",
+      rows: [],
+      resultKey: null,
+      statusValue,
+      message,
+    };
+  }
+
+  if (statusValue && PENDING_STATUSES.has(statusValue)) {
+    return { kind: "pending", statusValue, message };
+  }
+
+  // A bare { status: "building", message: "..." } is the only documented
+  // in-progress shape. Anything else is genuinely unknown, and we should not
+  // guess that an arbitrary object is a successful dataset.
+  return { kind: "unrecognized" };
 }
