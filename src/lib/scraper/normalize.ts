@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Job } from "@/lib/types";
 
-const RawJobSchema = z.record(z.unknown());
+const RawJobSchema = z.record(z.string(), z.unknown());
 
 function extractString(val: unknown): string | undefined {
   if (typeof val === "string") return val.trim() || undefined;
