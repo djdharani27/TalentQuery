@@ -139,6 +139,19 @@ function HealthBar({ score }: { score: number }) {
   );
 }
 
+function stripHtml(text: string): string {
+  return text
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function timeAgo(dateStr: string | null): string {
   if (!dateStr) return "never";
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -756,7 +769,9 @@ export default function Home() {
                           )}
 
                           {job.description && (
-                            <p className="sv-job-desc">{job.description}</p>
+                            <p className="sv-job-desc">
+                              {stripHtml(job.description)}
+                            </p>
                           )}
                         </article>
                       ))}

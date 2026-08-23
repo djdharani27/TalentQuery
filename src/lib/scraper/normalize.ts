@@ -10,6 +10,22 @@ function extractString(val: unknown): string | undefined {
   return undefined;
 }
 
+// Bright Data scrapers often return `description` as raw HTML (e.g. Cursor,
+// Circleback) while others return plain text. Strip tags and collapse
+// whitespace so descriptions render cleanly instead of as literal markup.
+function stripHtml(val: string): string {
+  return val
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function findField(
   obj: Record<string, unknown>,
   candidates: string[]
@@ -93,7 +109,7 @@ function normalizeSingleJob(raw: Record<string, unknown>): Job | null {
   if (location) job.location = location;
   if (department) job.department = department;
   if (employment_type) job.employment_type = employment_type;
-  if (description) job.description = description;
+  if (description) job.description = stripHtml(description);
 
   return job;
 }

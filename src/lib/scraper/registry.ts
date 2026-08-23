@@ -90,51 +90,60 @@ export async function ensureScraper(
   company: Company,
   client: BrightDataClient
 ): Promise<string> {
-  if (company.scraper_id) {
-    return company.scraper_id;
+  // Re-read from the DB instead of trusting the (possibly stale) company
+  // object passed in. A previous run may have already created the collector
+  // but not returned it to this caller.
+  const fresh = await getCompany(company.id);
+  if (fresh?.scraper_id) {
+    return fresh.scraper_id;
+  }
+
+  const current = fresh ?? company;
+
+  if (!current.careers_url) {
+    throw new Error("Company careers URL is required to create scraper");
   }
 
   logger.info("Creating new scraper", {
     operation: "registry",
-    company: company.name,
-    company_id: company.id,
+    company: current.name,
+    company_id: current.id,
   });
 
   // Update status to creating_scraper
-  await updateCompanyStatus(company.id, "creating_scraper");
+  await updateCompanyStatus(current.id, "creating_scraper");
 
   // Create scraper template via Bright Data API
   const collector = await client.createCollector(
-    `${company.name} Careers`
+    `${current.name} Careers`
   );
 
-  // Trigger AI Flow to generate the scraper code
-  if (!company.careers_url) {
-    throw new Error("Company careers URL is required to create scraper");
-  }
-
-  await client.triggerAIFlow(
-    collector.id,
-    `Extract all job listings from this careers page. For each job, extract: title, location, department, employment type, description, and the URL of the individual job posting.`,
-    [company.careers_url]
-  );
-
-  // Wait for AI to finish generating the scraper
-  await client.waitForAIJob(collector.id);
-
-  // Update company with scraper ID
+  // Persist the scraper id immediately. `createCollector` has already created
+  // the collector in Bright Data, so if AI-flow generation fails or is
+  // interrupted afterwards we must not lose the id and create a second orphan
+  // "Draft" collector on the next run.
   const db = getSupabase();
   await db
     .from("companies")
     .update({
       scraper_id: collector.id,
     })
-    .eq("id", company.id);
+    .eq("id", current.id);
+
+  // Trigger AI Flow to generate the scraper code
+  await client.triggerAIFlow(
+    collector.id,
+    `Extract all job listings from this careers page. For each job, extract: title, location, department, employment type, description, and the URL of the individual job posting.`,
+    [current.careers_url]
+  );
+
+  // Wait for AI to finish generating the scraper
+  await client.waitForAIJob(collector.id);
 
   logger.info("Scraper created", {
     operation: "registry",
-    company: company.name,
-    company_id: company.id,
+    company: current.name,
+    company_id: current.id,
     scraper_id: collector.id,
   });
 
