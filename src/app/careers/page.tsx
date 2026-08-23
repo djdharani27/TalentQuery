@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import CareersBoardV2 from "./careers-board-v2";
+import CareersBoardV1 from "./careers-board-v1";
 
 export const metadata: Metadata = {
   title: "Careers - TechCorp",
 };
 
 export default function CareersPage() {
-  return <CareersBoardV2/>;
+  return <CareersBoardV1/>;
 }
