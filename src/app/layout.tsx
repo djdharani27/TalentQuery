@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Scrape Verse - Self-Healing Careers Scraper",
+  title: "Career Scrape - Self-Healing Careers Scraper",
   description:
     "Automatically discover and scrape company career pages with self-healing AI",
 };
