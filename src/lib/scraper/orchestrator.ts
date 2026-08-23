@@ -176,11 +176,17 @@ export async function executeScrape(company: Company): Promise<{
     });
   } else if (
     health.status === "broken" &&
-    !failureReason &&
+    (scraperId || company.scraper_id) &&
     company.healing_attempts < MAX_HEALING_ATTEMPTS
   ) {
     healingTriggered = true;
-    await triggerSelfHealing(company, scraperId!, health, rawResult, client);
+    await triggerSelfHealing(
+      company,
+      scraperId ?? company.scraper_id!,
+      health,
+      rawResult,
+      client
+    );
   } else {
     // broken + max attempts reached, or failure
     await updateCompanyStatus(company.id, failureReason ? "error" : "healing_failed", {
