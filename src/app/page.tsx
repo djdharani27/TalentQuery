@@ -54,7 +54,7 @@ const ACTIVE_STATUSES = [
   "self_healing",
 ];
 
-const EXAMPLE_COMPANIES = ["Cursor", "SafetyKit", "CircleBack"];
+const EXAMPLE_COMPANIES = ["Cursor"];
 
 const SEARCH_HISTORY_KEY = "talentquery:search-history";
 const SEARCH_HISTORY_LIMIT = 8;
