@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import Link from "next/link";
 
 interface CompanyStatus {
   status: string;
@@ -90,211 +91,305 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="flex flex-col flex-1">
-      <header className="border-b border-neutral-800 px-6 py-4">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <span className="text-lg font-semibold">Admin / Debug</span>
-          <a
-            href="/"
-            className="text-sm text-neutral-400 hover:text-neutral-200 transition-colors"
-          >
-            Back to App
-          </a>
+    <div className="flex flex-col flex-1 sv-bg-grid">
+      <header className="sv-header">
+        <div className="sv-header-inner">
+          <Link href="/" className="sv-brand">
+            <span className="sv-brand-mark">SV</span>
+            <span className="sv-brand-name">
+              Admin<span>/</span>Debug
+            </span>
+          </Link>
+          <nav className="sv-nav">
+            <Link href="/" className="sv-nav-link">
+              Careers
+            </Link>
+            <Link href="/admin" className="sv-nav-link is-active">
+              Admin
+            </Link>
+          </nav>
         </div>
       </header>
 
-      <main className="flex-1 px-6 py-8">
-        <div className="max-w-5xl mx-auto space-y-8">
-          {/* Company Lookup */}
-          <section className="card p-6">
-            <h2 className="text-lg font-semibold mb-4">Company Lookup</h2>
-            <div className="flex gap-3 mb-4">
-              <input
-                type="text"
-                value={companyId}
-                onChange={(e) => setCompanyId(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && fetchStatus()}
-                placeholder="Company UUID"
-              />
-              <button
-                className="btn-primary whitespace-nowrap"
-                onClick={fetchStatus}
-                disabled={loading}
-              >
-                {loading ? "Loading..." : "Fetch Status"}
-              </button>
-            </div>
+      <main className="sv-main">
+        <div className="sv-container">
+          <p className="sv-overline mb-4">Admin / Debug</p>
 
-            {status && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <InfoBox label="Status" value={status.status} />
-                  <InfoBox label="Health Score" value={`${status.healthScore}/100`} />
-                  <InfoBox label="Jobs" value={String(status.jobCount)} />
-                  <InfoBox label="Scraper Version" value={`v${status.scraperVersion}`} />
-                  <InfoBox label="Scraper ID" value={status.scraperId || "-"} />
-                  <InfoBox label="Healing Attempts" value={String(status.healingAttempts)} />
-                  <InfoBox label="Last Scrape" value={fmtDate(status.lastScrape)} />
+          <div className="flex flex-col gap-10">
+            {/* Company Lookup */}
+            <section className="sv-panel">
+              <div className="sv-panel-head">
+                <span className="sv-panel-title">Company Lookup</span>
+              </div>
+              <div className="sv-panel-body">
+                <div className="sv-search">
+                  <div className="sv-search-row">
+                    <span className="sv-search-prefix" aria-hidden="true">
+                      #
+                    </span>
+                    <input
+                      className="sv-input"
+                      type="text"
+                      value={companyId}
+                      onChange={(e) => setCompanyId(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && fetchStatus()}
+                      placeholder="Company UUID"
+                    />
+                  </div>
+                  <button
+                    className="sv-btn sv-btn--primary sv-btn--block"
+                    onClick={fetchStatus}
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <span className="sv-inline-loading">
+                        <span className="sv-spinner" />
+                        Loading
+                      </span>
+                    ) : (
+                      "Fetch Status"
+                    )}
+                  </button>
                 </div>
 
-                {/* Scraper Runs */}
-                {status.runs.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-semibold mb-2 text-neutral-300">
-                      Scraper Runs
-                    </h3>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-left text-neutral-500 border-b border-neutral-800">
-                            <th className="py-2 pr-4">Status</th>
-                            <th className="py-2 pr-4">Jobs</th>
-                            <th className="py-2 pr-4">Health</th>
-                            <th className="py-2 pr-4">Reason</th>
-                            <th className="py-2 pr-4">Started</th>
-                            <th className="py-2">Duration</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {status.runs.map((run) => (
-                            <tr key={run.id} className="border-b border-neutral-800/50">
-                              <td className="py-2 pr-4">{run.status}</td>
-                              <td className="py-2 pr-4">{run.result_count}</td>
-                              <td className="py-2 pr-4">{run.health_score}</td>
-                              <td className="py-2 pr-4 text-neutral-400 max-w-xs truncate">
-                                {run.failure_reason || "-"}
-                              </td>
-                              <td className="py-2 pr-4">{fmtDate(run.started_at)}</td>
-                              <td className="py-2">{duration(run.started_at, run.completed_at)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                {status && (
+                  <div className="mt-8">
+                    <div className="sv-grid">
+                      <InfoBox label="Status" value={status.status} />
+                      <InfoBox
+                        label="Health Score"
+                        value={`${status.healthScore}/100`}
+                      />
+                      <InfoBox label="Jobs" value={String(status.jobCount)} />
+                      <InfoBox
+                        label="Scraper Version"
+                        value={`v${status.scraperVersion}`}
+                      />
+                      <InfoBox
+                        label="Scraper ID"
+                        value={status.scraperId || "-"}
+                      />
+                      <InfoBox
+                        label="Healing Attempts"
+                        value={String(status.healingAttempts)}
+                      />
+                      <InfoBox
+                        label="Last Scrape"
+                        value={fmtDate(status.lastScrape)}
+                      />
                     </div>
-                  </div>
-                )}
 
-                {/* Healing Runs */}
-                {status.healingRuns.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-semibold mb-2 text-neutral-300">
-                      Healing Runs
-                    </h3>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-left text-neutral-500 border-b border-neutral-800">
-                            <th className="py-2 pr-4">Status</th>
-                            <th className="py-2 pr-4">Reason</th>
-                            <th className="py-2 pr-4">Version</th>
-                            <th className="py-2 pr-4">Error</th>
-                            <th className="py-2 pr-4">Started</th>
-                            <th className="py-2">Duration</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {status.healingRuns.map((hr) => (
-                            <tr key={hr.id} className="border-b border-neutral-800/50">
-                              <td className="py-2 pr-4">{hr.status}</td>
-                              <td className="py-2 pr-4 max-w-xs truncate">{hr.trigger_reason}</td>
-                              <td className="py-2 pr-4">
-                                v{hr.old_version}
-                                {hr.new_version ? ` -> v${hr.new_version}` : ""}
-                              </td>
-                              <td className="py-2 pr-4 text-red-400 max-w-xs truncate">
-                                {hr.error || "-"}
-                              </td>
-                              <td className="py-2 pr-4">{fmtDate(hr.started_at)}</td>
-                              <td className="py-2">{duration(hr.started_at, hr.completed_at)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    {status.runs.length > 0 && (
+                      <div className="mt-8">
+                        <h3 className="sv-overline mb-3">Scraper Runs</h3>
+                        <div className="sv-table-wrap">
+                          <table className="sv-table">
+                            <thead>
+                              <tr>
+                                <th>Status</th>
+                                <th>Jobs</th>
+                                <th>Health</th>
+                                <th>Reason</th>
+                                <th>Started</th>
+                                <th>Duration</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {status.runs.map((run) => (
+                                <tr key={run.id}>
+                                  <td>{run.status}</td>
+                                  <td>{run.result_count}</td>
+                                  <td>{run.health_score}</td>
+                                  <td
+                                    className="sv-mono"
+                                    style={{
+                                      color: "var(--ink-2)",
+                                      maxWidth: 260,
+                                    }}
+                                  >
+                                    {run.failure_reason || "-"}
+                                  </td>
+                                  <td>{fmtDate(run.started_at)}</td>
+                                  <td>
+                                    {duration(run.started_at, run.completed_at)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {status.healingRuns.length > 0 && (
+                      <div className="mt-8">
+                        <h3 className="sv-overline mb-3">Healing Runs</h3>
+                        <div className="sv-table-wrap">
+                          <table className="sv-table">
+                            <thead>
+                              <tr>
+                                <th>Status</th>
+                                <th>Reason</th>
+                                <th>Version</th>
+                                <th>Error</th>
+                                <th>Started</th>
+                                <th>Duration</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {status.healingRuns.map((hr) => (
+                                <tr key={hr.id}>
+                                  <td>{hr.status}</td>
+                                  <td
+                                    className="sv-mono"
+                                    style={{
+                                      color: "var(--ink-2)",
+                                      maxWidth: 260,
+                                    }}
+                                  >
+                                    {hr.trigger_reason}
+                                  </td>
+                                  <td>
+                                    v{hr.old_version}
+                                    {hr.new_version
+                                      ? ` -> v${hr.new_version}`
+                                      : ""}
+                                  </td>
+                                  <td
+                                    className="sv-mono"
+                                    style={{
+                                      color: "var(--accent)",
+                                      maxWidth: 260,
+                                    }}
+                                  >
+                                    {hr.error || "-"}
+                                  </td>
+                                  <td>{fmtDate(hr.started_at)}</td>
+                                  <td>
+                                    {duration(hr.started_at, hr.completed_at)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            )}
-          </section>
+            </section>
 
-          {/* Test Scenarios */}
-          <section className="card p-6">
-            <h2 className="text-lg font-semibold mb-2">Test Scenarios</h2>
-            <p className="text-sm text-neutral-400 mb-4">
-              Run simulated scraper scenarios to test health scoring and
-              orchestration logic without hitting real APIs.
-            </p>
-            <div className="flex flex-wrap gap-2 mb-4">
-              {[
-                { key: "success", label: "A: 100 Jobs (Healthy)" },
-                { key: "zero_jobs", label: "B: 0 Jobs (Broken)" },
-                { key: "malformed", label: "C: Malformed Data" },
-                { key: "missing_fields", label: "D: Missing Fields" },
-                { key: "healed", label: "E: Healed (Success)" },
-              ].map((s) => (
-                <button
-                  key={s.key}
-                  className="px-3 py-1.5 rounded-lg border border-neutral-700 text-sm text-neutral-300 hover:bg-neutral-800 transition-colors"
-                  onClick={() => runTest(s.key)}
-                  disabled={testLoading}
+            {/* Test Scenarios */}
+            <section className="sv-panel">
+              <div className="sv-panel-head">
+                <span className="sv-panel-title">Test Scenarios</span>
+              </div>
+              <div className="sv-panel-body">
+                <p
+                  className="sv-lede mb-5"
+                  style={{ fontSize: 14, color: "var(--ink-2)" }}
                 >
-                  {s.label}
-                </button>
-              ))}
-            </div>
-
-            {testResult && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-4">
-                  <span className="text-sm font-medium">
-                    Scenario: {testResult.scenario}
-                  </span>
-                  <span className="text-sm">
-                    Jobs: {testResult.jobCount}
-                  </span>
-                  <span
-                    className={`badge ${
-                      testResult.health.status === "healthy"
-                        ? "badge-healthy"
-                        : testResult.health.status === "suspicious"
-                          ? "badge-suspicious"
-                          : "badge-broken"
-                    }`}
-                  >
-                    {testResult.health.status} ({testResult.health.score}/100)
-                  </span>
-                </div>
-                <div className="space-y-1">
-                  {testResult.health.checks.map((c) => (
-                    <div
-                      key={c.name}
-                      className="flex items-center gap-2 text-xs"
+                  Run simulated scraper scenarios to test health scoring and
+                  orchestration logic without hitting real APIs.
+                </p>
+                <div className="flex flex-wrap gap-3 mb-6">
+                  {[
+                    { key: "success", label: "A: 100 Jobs (Healthy)" },
+                    { key: "zero_jobs", label: "B: 0 Jobs (Broken)" },
+                    { key: "malformed", label: "C: Malformed Data" },
+                    { key: "missing_fields", label: "D: Missing Fields" },
+                    { key: "healed", label: "E: Healed (Success)" },
+                  ].map((s) => (
+                    <button
+                      key={s.key}
+                      className="sv-btn"
+                      onClick={() => runTest(s.key)}
+                      disabled={testLoading}
                     >
-                      <span
-                        className={c.passed ? "text-green-400" : "text-red-400"}
-                      >
-                        {c.passed ? "PASS" : "FAIL"}
-                      </span>
-                      <span className="text-neutral-500 w-40">{c.name}</span>
-                      <span className="text-neutral-400">{c.detail}</span>
-                      <span className="text-neutral-600">(w:{c.weight})</span>
-                    </div>
+                      {s.label}
+                    </button>
                   ))}
                 </div>
+
+                {testResult && (
+                  <div className="sv-state">
+                    <div className="flex flex-wrap items-center gap-4">
+                      <span className="sv-overline">
+                        Scenario: {testResult.scenario}
+                      </span>
+                      <span className="sv-mono text-sm">
+                        Jobs: {testResult.jobCount}
+                      </span>
+                      <span
+                        className={`sv-badge ${
+                          testResult.health.status === "healthy"
+                            ? "sv-badge--healthy"
+                            : testResult.health.status === "suspicious"
+                              ? "sv-badge--suspicious"
+                              : "sv-badge--broken"
+                        }`}
+                      >
+                        {testResult.health.status} ({testResult.health.score}
+                        /100)
+                      </span>
+                    </div>
+                    <div className="mt-5 flex flex-col gap-2">
+                      {testResult.health.checks.map((c) => (
+                        <div
+                          key={c.name}
+                          className="sv-mono flex flex-wrap items-center gap-x-4 gap-y-1 text-xs"
+                        >
+                          <span
+                            style={{
+                              color: c.passed
+                                ? "var(--ink)"
+                                : "var(--accent)",
+                              fontWeight: 700,
+                            }}
+                          >
+                            {c.passed ? "PASS" : "FAIL"}
+                          </span>
+                          <span
+                            style={{
+                              color: "var(--ink-2)",
+                              width: 160,
+                            }}
+                          >
+                            {c.name}
+                          </span>
+                          <span style={{ color: "var(--ink-3)" }}>
+                            {c.detail}
+                          </span>
+                          <span style={{ color: "var(--ink-3)" }}>
+                            (w:{c.weight})
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </section>
+            </section>
+          </div>
         </div>
       </main>
+
+      <footer className="sv-footer">
+        <div className="sv-footer-inner">
+          <span>Scrape/Verse</span>
+          <span>Admin / Debug</span>
+        </div>
+      </footer>
     </div>
   );
 }
 
 function InfoBox({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <div className="text-xs text-neutral-500 mb-1">{label}</div>
-      <div className="text-sm font-mono truncate">{value}</div>
+    <div className="sv-grid-item">
+      <div className="sv-grid-key">{label}</div>
+      <div className="sv-grid-value">{value}</div>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import Link from "next/link";
 
 interface Company {
   id: string;
@@ -33,50 +34,60 @@ interface SearchResult {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  discovering: "Discovering company...",
-  creating_scraper: "Creating scraper...",
-  scraping: "Scraping jobs...",
-  validating: "Validating results...",
+  discovering: "Discovering company",
+  creating_scraper: "Creating scraper",
+  scraping: "Scraping jobs",
+  validating: "Validating results",
   healthy: "Scraper healthy",
   suspicious: "Results suspicious",
   broken: "Scraper broken",
-  self_healing: "Self-healing in progress...",
+  self_healing: "Self-healing",
   healing_failed: "Healing failed",
   error: "Scrape failed",
 };
 
+const ACTIVE_STATUSES = [
+  "discovering",
+  "creating_scraper",
+  "scraping",
+  "validating",
+  "self_healing",
+];
+
 function StatusBadge({ status }: { status: string }) {
-  const classMap: Record<string, string> = {
-    healthy: "badge-healthy",
-    suspicious: "badge-suspicious",
-    broken: "badge-broken",
-    self_healing: "badge-healing",
-    discovering: "badge-discovering",
-    creating_scraper: "badge-discovering",
-    scraping: "badge-healing",
-    validating: "badge-healing",
-    healing_failed: "badge-broken",
-    error: "badge-broken",
-  };
+  const tone = (() => {
+    if (status === "healthy") return "sv-badge--healthy";
+    if (status === "suspicious") return "sv-badge--suspicious";
+    if (status === "broken" || status === "error" || status === "healing_failed")
+      return "sv-badge--broken";
+    if (ACTIVE_STATUSES.includes(status)) return "sv-badge--processing";
+    return "";
+  })();
+
   return (
-    <span className={`badge ${classMap[status] || "badge-default"}`}>
+    <span className={`sv-badge ${tone}`}>
       {STATUS_LABELS[status] || status}
     </span>
   );
 }
 
 function HealthBar({ score }: { score: number }) {
-  const color =
-    score >= 90 ? "bg-green-500" : score >= 70 ? "bg-yellow-500" : "bg-red-500";
+  const fill =
+    score >= 90
+      ? "sv-health-fill--good"
+      : score >= 70
+        ? "sv-health-fill--warn"
+        : "sv-health-fill--bad";
+
   return (
-    <div className="flex items-center gap-3">
-      <div className="h-2 w-32 rounded-full bg-neutral-800 overflow-hidden">
+    <div className="sv-health">
+      <div className="sv-health-track">
         <div
-          className={`h-full rounded-full transition-all duration-500 ${color}`}
+          className={`sv-health-fill ${fill}`}
           style={{ width: `${score}%` }}
         />
       </div>
-      <span className="text-sm text-neutral-400">{score}/100</span>
+      <span className="sv-health-score">{score}/100</span>
     </div>
   );
 }
@@ -115,15 +126,8 @@ export default function Home() {
               }
             : prev
         );
-        // Stop polling if status is stable (not actively processing)
-        const activeStatuses = [
-          "discovering",
-          "creating_scraper",
-          "scraping",
-          "self_healing",
-        ];
-        if (!activeStatuses.includes(data.status)) {
-          return true; // stop
+        if (!ACTIVE_STATUSES.includes(data.status)) {
+          return true;
         }
       }
     } catch {
@@ -134,15 +138,11 @@ export default function Home() {
 
   useEffect(() => {
     if (statusPolling && result?.company.id) {
-      // Poll immediately, then every 3 seconds. No attempt cap: scraping and
-      // self-healing can legitimately take a long time, so keep polling until
-      // the status endpoint reports a stable (non-processing) state.
       const poll = async () => {
         const shouldStop = await pollStatus(result.company.id);
         if (shouldStop && pollRef.current) {
           clearInterval(pollRef.current);
           setStatusPolling(false);
-          // Refresh jobs
           const res = await fetch(`/api/companies/${result.company.id}/jobs`);
           if (res.ok) {
             const data = await res.json();
@@ -153,10 +153,7 @@ export default function Home() {
         }
       };
 
-      // Initial poll
       poll();
-
-      // Set up interval
       pollRef.current = setInterval(poll, 3000);
     }
     return () => {
@@ -206,7 +203,6 @@ export default function Home() {
         throw new Error(data.error || "Scrape failed");
       }
 
-      // API returns immediately - start polling for status updates
       setStatusPolling(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Scrape failed");
@@ -230,7 +226,6 @@ export default function Home() {
         throw new Error(data.error || "Healing failed");
       }
 
-      // Start polling so the status and jobs update when healing completes
       setStatusPolling(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Healing failed");
@@ -239,119 +234,130 @@ export default function Home() {
     }
   }, [result]);
 
+  const busy = scraping || statusPolling || healing;
+  const processingLabel =
+    result?.company.status === "self_healing"
+      ? "Self-healing in progress"
+      : result?.company.status === "scraping"
+        ? "Scraping in progress"
+        : result?.company.status === "creating_scraper"
+          ? "Creating scraper"
+          : result?.company.status === "discovering"
+            ? "Discovering company"
+            : result?.company.status === "validating"
+              ? "Validating results"
+              : "Processing";
+
   return (
-    <div className="flex flex-col flex-1">
-      {/* Header */}
-      <header className="border-b border-neutral-800 px-6 py-4">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <svg
-              className="w-6 h-6 text-blue-500"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-            <span className="text-lg font-semibold">Scrape Verse</span>
-          </div>
-          <a
-            href="/admin"
-            className="text-sm text-neutral-400 hover:text-neutral-200 transition-colors"
-          >
-            Admin
-          </a>
+    <div
+      className={
+        result
+          ? "flex flex-col sv-shell--results sv-bg-grid"
+          : "flex flex-col sv-shell--home sv-bg-grid"
+      }
+    >
+      <header className="sv-header">
+        <div className="sv-header-inner">
+          <Link href="/" className="sv-brand">
+            <span className="sv-brand-mark">SV</span>
+            <span className="sv-brand-name">
+              Scrape<span>/</span>Verse
+            </span>
+          </Link>
+          <nav className="sv-nav">
+            <Link href="/" className="sv-nav-link is-active">
+              Careers
+            </Link>
+            <Link href="/admin" className="sv-nav-link">
+              Admin
+            </Link>
+          </nav>
         </div>
       </header>
 
-      {/* Main */}
-      <main className="flex-1 flex flex-col items-center px-6 py-12">
-        <div className="w-full max-w-3xl">
+      <main className={result ? "sv-main" : "sv-main sv-main--home"}>
+        <div
+          className={
+            result
+              ? "sv-container sv-container--narrow"
+              : "sv-container sv-container--narrow sv-container--home"
+          }
+        >
           {/* Hero */}
           {!result && (
-            <div className="text-center mb-12">
-              <h1 className="text-4xl font-bold mb-3">
-                Self-Healing Careers Scraper
+            <div className="mb-14">
+              <p className="sv-overline mb-4">Self-healing careers scraper</p>
+              <h1 className="sv-h1">
+                A scraper that
+                <br />
+                <span className="sv-accent">fixes itself</span> &amp;{" "}
+                <span className="sv-accent">your career.</span>
               </h1>
-              <p className="text-neutral-400 text-lg">
-                Enter a company name. We find their careers page, scrape jobs,
-                and automatically repair the scraper when pages change.
-              </p>
             </div>
           )}
 
           {/* Search */}
-          <div className="flex gap-3 mb-8">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              placeholder="Company name, domain, or URL (e.g. Cursor, hex.tech, https://nozomio.com/careers)"
-              disabled={loading}
-            />
-            <button
-              className="btn-primary whitespace-nowrap"
-              onClick={handleSearch}
-              disabled={loading || !query.trim()}
-            >
-              {loading ? (
-                <span className="flex items-center gap-2">
-                  <svg
-                    className="w-4 h-4 animate-spin-slow"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                    />
-                  </svg>
-                  Searching...
-                </span>
-              ) : (
-                "Search"
-              )}
-            </button>
-          </div>
+          <section className="sv-search" aria-label="Search">
+            <div className="sv-search-row">
+              <span className="sv-search-prefix" aria-hidden="true">
+                &gt;
+              </span>
+              <input
+                className="sv-input"
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                placeholder="Company name, domain, or URL (e.g. Cursor, hex.tech, https://nozomio.com/careers)"
+                disabled={loading}
+                aria-label="Company name, domain, or careers URL"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-4 mt-3">
+              <span className="sv-hint">
+                Press Enter or hit search to run
+              </span>
+              <button
+                className="sv-btn sv-btn--primary"
+                onClick={handleSearch}
+                disabled={loading || !query.trim()}
+              >
+                {loading ? (
+                  <span className="sv-inline-loading">
+                    <span className="sv-spinner" />
+                    Searching
+                  </span>
+                ) : (
+                  "Search"
+                )}
+              </button>
+            </div>
+          </section>
 
           {/* Error */}
           {error && (
-            <div className="card p-4 mb-6 border-red-900/50 bg-red-950/30">
-              <p className="text-red-400 text-sm">{error}</p>
-            </div>
+            <section className="sv-state sv-state--accent mt-10">
+              <p className="sv-state-label">Error</p>
+              <h2 className="sv-state-title">Scrape failed.</h2>
+              <p className="sv-state-body">{error}</p>
+            </section>
           )}
 
           {/* Result */}
           {result && (
-            <div className="space-y-6">
-              {/* Company Card */}
-              <div className="card p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h2 className="text-2xl font-bold">
-                      {result.company.name}
-                    </h2>
+            <div className="mt-12">
+              {/* Company panel */}
+              <section className="sv-panel">
+                <div className="sv-panel-head">
+                  <div className="flex items-baseline gap-4 min-w-0">
+                    <h2 className="sv-h2 truncate">{result.company.name}</h2>
                     {result.company.domain && (
                       <a
+                        className="sv-mono text-sm truncate"
                         href={`https://${result.company.domain}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-neutral-400 hover:text-blue-400 text-sm transition-colors"
+                        style={{ color: "var(--ink-3)" }}
                       >
                         {result.company.domain}
                       </a>
@@ -360,95 +366,93 @@ export default function Home() {
                   <StatusBadge status={result.company.status} />
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-                  <div>
-                    <div className="text-xs text-neutral-500 mb-1">
-                      Careers Page
+                <div className="sv-grid">
+                  <div className="sv-grid-item">
+                    <div className="sv-grid-key">Careers page</div>
+                    <div className="sv-grid-value">
+                      {result.company.careers_url ? (
+                        <a
+                          href={result.company.careers_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: "var(--ink)" }}
+                        >
+                          {result.company.careers_url.replace(
+                            /^https?:\/\//,
+                            ""
+                          )}
+                        </a>
+                      ) : (
+                        <span style={{ color: "var(--ink-3)" }}>
+                          Not found
+                        </span>
+                      )}
                     </div>
-                    {result.company.careers_url ? (
-                      <a
-                        href={result.company.careers_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm text-blue-400 hover:underline truncate block"
-                      >
-                        {result.company.careers_url.replace(
-                          /^https?:\/\//,
-                          ""
-                        )}
-                      </a>
-                    ) : (
-                      <span className="text-sm text-neutral-500">
-                        Not found
-                      </span>
-                    )}
                   </div>
-                  <div>
-                    <div className="text-xs text-neutral-500 mb-1">
-                      Health Score
-                    </div>
+                  <div className="sv-grid-item">
+                    <div className="sv-grid-key">Health score</div>
                     <HealthBar score={result.company.last_health_score} />
                   </div>
-                  <div>
-                    <div className="text-xs text-neutral-500 mb-1">Jobs</div>
-                    <span className="text-sm font-medium">
+                  <div className="sv-grid-item">
+                    <div className="sv-grid-key">Jobs</div>
+                    <div className="sv-grid-value">
                       {result.company.last_job_count}
-                    </span>
-                  </div>
-                  <div>
-                    <div className="text-xs text-neutral-500 mb-1">
-                      Last Checked
                     </div>
-                    <span className="text-sm">
+                  </div>
+                  <div className="sv-grid-item">
+                    <div className="sv-grid-key">Last checked</div>
+                    <div className="sv-grid-value">
                       {timeAgo(result.company.last_scrape_at)}
-                    </span>
+                    </div>
                   </div>
                 </div>
 
                 {result.company.scraper_id && (
-                  <div className="flex items-center gap-4 text-xs text-neutral-500 mb-4">
-                    <span>
+                  <div className="sv-panel-body sv-mono flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
+                    <span style={{ color: "var(--ink-3)" }}>
                       Scraper:{" "}
-                      <code className="text-neutral-400">
+                      <span style={{ color: "var(--ink-2)" }}>
                         {result.company.scraper_id}
-                      </code>
+                      </span>
                     </span>
-                    <span>v{result.company.scraper_version}</span>
+                    <span style={{ color: "var(--ink-3)" }}>
+                      v{result.company.scraper_version}
+                    </span>
                     {result.company.healing_attempts > 0 && (
-                      <span>
+                      <span style={{ color: "var(--ink-3)" }}>
                         Healing attempts: {result.company.healing_attempts}
                       </span>
                     )}
                   </div>
                 )}
 
-                <div className="flex gap-3">
+                <div className="sv-panel-body flex flex-wrap gap-3">
                   <button
-                    className="btn-primary"
+                    className="sv-btn sv-btn--primary"
                     onClick={handleScrape}
-                    disabled={scraping || statusPolling || healing}
+                    disabled={busy}
                   >
                     {scraping
-                      ? "Starting..."
+                      ? "Starting"
                       : statusPolling
                         ? result.company.status === "self_healing"
-                          ? "Healing..."
-                          : "Scraping..."
+                          ? "Healing"
+                          : "Scraping"
                         : result.isNew
                           ? "Start Scraping"
                           : "Refresh Jobs"}
                   </button>
                   {result.company.status === "healing_failed" && (
                     <button
-                      className="px-4 py-2 rounded-lg border border-amber-700 text-amber-300 hover:bg-amber-950/40 transition-colors text-sm"
+                      className="sv-btn sv-btn--accent"
                       onClick={handleHeal}
-                      disabled={healing || statusPolling || scraping}
+                      disabled={busy}
                     >
-                      {healing ? "Healing..." : "Heal Scraper"}
+                      {healing ? "Healing" : "Heal Scraper"}
                     </button>
                   )}
                   <button
-                    className="px-4 py-2 rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800 transition-colors text-sm"
+                    className="sv-btn"
                     onClick={() => {
                       setResult(null);
                       setQuery("");
@@ -457,115 +461,108 @@ export default function Home() {
                     New Search
                   </button>
                 </div>
-              </div>
+              </section>
 
-              {/* Processing Status */}
+              {/* Processing status */}
               {statusPolling && (
-                <div className="card p-4 border-blue-900/50 bg-blue-950/20">
-                  <div className="flex items-center gap-3">
-                    <svg
-                      className="w-5 h-5 text-blue-400 animate-spin-slow"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                      />
-                    </svg>
+                <section
+                  className="sv-state mt-6"
+                  style={{ borderColor: "var(--accent)" }}
+                >
+                  <div className="flex items-center gap-4">
+                    <span className="sv-spinner" />
                     <div>
-                      <p className="text-sm font-medium text-blue-300">
-                        {result.company.status === "self_healing"
-                          ? "Self-healing in progress"
-                          : result.company.status === "scraping"
-                            ? "Scraping in progress"
-                            : result.company.status === "creating_scraper"
-                              ? "Creating scraper"
-                              : "Processing..."}
+                      <p className="sv-state-label" style={{ margin: 0 }}>
+                        {processingLabel}
                       </p>
-                      <p className="text-xs text-neutral-400">
+                      <p
+                        className="sv-state-body mt-1"
+                        style={{ fontSize: 13 }}
+                      >
                         {result.company.status === "self_healing"
                           ? "The scraper detected a problem and is automatically repairing itself."
                           : "This page will update automatically when complete."}
                       </p>
                     </div>
                   </div>
-                </div>
+                </section>
               )}
 
-              {/* Jobs List */}
-              {!scraping && !healing && !statusPolling && result.jobs.length > 0 && (
-                <div>
-                  <h3 className="text-lg font-semibold mb-4">
-                    {result.jobs.length} Jobs Found
-                  </h3>
-                  <div className="space-y-2">
-                    {result.jobs.map((job, i) => (
-                      <div
-                        key={i}
-                        className="card p-4 hover:border-neutral-600 transition-colors"
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="min-w-0">
-                            <h4 className="font-medium truncate">
+              {/* Jobs list */}
+              {!scraping &&
+                !healing &&
+                !statusPolling &&
+                result.jobs.length > 0 && (
+                  <section className="sv-panel mt-12">
+                    <div className="sv-section-head sv-section-head--invert">
+                      <span className="sv-overline" style={{ color: "var(--accent)" }}>
+                        Open roles
+                      </span>
+                      <span className="sv-section-count sv-section-count--light">
+                        {String(result.jobs.length).padStart(2, "0")} found
+                      </span>
+                    </div>
+                    <div className="sv-job-list">
+                      {result.jobs.map((job, i) => (
+                        <article className="sv-job" key={i}>
+                          <div className="sv-job-head">
+                            <span className="sv-job-index">
+                              {String(i + 1).padStart(2, "0")}
+                            </span>
+                            <h3 className="sv-job-title">
                               {job.url ? (
                                 <a
                                   href={job.url}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="hover:text-blue-400 transition-colors"
                                 >
                                   {job.title}
                                 </a>
                               ) : (
                                 job.title
                               )}
-                            </h4>
-                            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
-                              {job.location && (
-                                <span className="text-sm text-neutral-400">
-                                  {job.location}
-                                </span>
-                              )}
+                            </h3>
+                            {job.url && (
+                              <a
+                                className="sv-job-link-arrow"
+                                href={job.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                aria-label={`View ${job.title}`}
+                              >
+                                &#8599;
+                              </a>
+                            )}
+                          </div>
+
+                          {(job.department ||
+                            job.location ||
+                            job.employment_type) && (
+                            <div className="sv-job-tags">
                               {job.department && (
-                                <span className="text-sm text-neutral-500">
-                                  {job.department}
-                                </span>
+                                <span className="sv-tag">{job.department}</span>
+                              )}
+                              {job.location && (
+                                <span className="sv-tag">{job.location}</span>
                               )}
                               {job.employment_type && (
-                                <span className="text-sm text-neutral-500">
+                                <span className="sv-tag">
                                   {job.employment_type}
                                 </span>
                               )}
                             </div>
-                          </div>
-                          {job.url && (
-                            <a
-                              href={job.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-blue-400 hover:underline whitespace-nowrap"
-                            >
-                              View
-                            </a>
                           )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
 
-              {/* No jobs state */}
+                          {job.description && (
+                            <p className="sv-job-desc">{job.description}</p>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+              {/* Empty state */}
               {result.jobs.length === 0 &&
                 !scraping &&
                 !healing &&
@@ -573,13 +570,15 @@ export default function Home() {
                 result.company.status !== "discovering" &&
                 result.company.status !== "creating_scraper" &&
                 result.company.status !== "scraping" && (
-                  <div className="card p-8 text-center">
-                    <p className="text-neutral-400">
+                  <section className="sv-state mt-12">
+                    <p className="sv-state-label">Result</p>
+                    <h2 className="sv-state-title">No open roles.</h2>
+                    <p className="sv-state-body">
                       {result.isNew
-                        ? 'Click "Start Scraping" to discover jobs.'
-                        : "No active jobs found. Try refreshing."}
+                        ? "This company has been registered. Start scraping to discover its jobs."
+                        : "No active jobs found. Try refreshing the scraper."}
                     </p>
-                  </div>
+                  </section>
                 )}
             </div>
           )}
