@@ -73,6 +73,3 @@ src/
     db/          # Supabase and schema
 ```
 
-## License
-
-MIT
