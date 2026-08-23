@@ -56,6 +56,51 @@ const ACTIVE_STATUSES = [
 
 const EXAMPLE_COMPANIES = ["Cursor", "SafetyKit", "CircleBack"];
 
+const SEARCH_HISTORY_KEY = "talentquery:search-history";
+const SEARCH_HISTORY_LIMIT = 8;
+const LAST_SEARCH_KEY = "talentquery:last-search";
+
+interface PersistedSearch {
+  query: string;
+  result: SearchResult;
+}
+
+function loadSearchHistory(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(SEARCH_HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed
+          .filter((item): item is string => typeof item === "string")
+          .slice(0, SEARCH_HISTORY_LIMIT)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function loadLastSearch(): PersistedSearch | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(LAST_SEARCH_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      parsed &&
+      typeof parsed.query === "string" &&
+      parsed.result &&
+      typeof parsed.result === "object"
+    ) {
+      return { query: parsed.query, result: parsed.result as SearchResult };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function StatusBadge({ status }: { status: string }) {
   const tone = (() => {
     if (status === "healthy") return "sv-badge--healthy";
@@ -113,7 +158,46 @@ export default function Home() {
   const [scraping, setScraping] = useState(false);
   const [healing, setHealing] = useState(false);
   const [statusPolling, setStatusPolling] = useState(false);
+  const [history, setHistory] = useState<string[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    // Hydrate history and the last search after mount to avoid SSR/client
+    // markup mismatch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHistory(loadSearchHistory());
+    const last = loadLastSearch();
+    if (last) {
+      setQuery(last.query);
+      setResult(last.result);
+    }
+  }, []);
+
+  const saveToHistory = useCallback((term: string) => {
+    const clean = term.trim();
+    if (!clean) return;
+    setHistory((prev) => {
+      const next = [clean, ...prev.filter((item) => item !== clean)].slice(
+        0,
+        SEARCH_HISTORY_LIMIT
+      );
+      try {
+        window.localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(next));
+      } catch {
+        // ignore storage failures (private mode, quota, etc.)
+      }
+      return next;
+    });
+  }, []);
+
+  const clearHistory = useCallback(() => {
+    setHistory([]);
+    try {
+      window.localStorage.removeItem(SEARCH_HISTORY_KEY);
+    } catch {
+      // ignore storage failures
+    }
+  }, []);
 
   const pollStatus = useCallback(async (companyId: string) => {
     try {
@@ -183,12 +267,21 @@ export default function Home() {
 
       const data: SearchResult = await res.json();
       setResult(data);
+      saveToHistory(query);
+      try {
+        window.localStorage.setItem(
+          LAST_SEARCH_KEY,
+          JSON.stringify({ query: query.trim(), result: data })
+        );
+      } catch {
+        // ignore storage failures
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
     } finally {
       setLoading(false);
     }
-  }, [query]);
+  }, [query, saveToHistory]);
 
   const handleScrape = useCallback(async () => {
     if (!result?.company.id) return;
@@ -398,6 +491,51 @@ export default function Home() {
             </div>
           </section>
 
+          {/* Recent searches */}
+          {history.length > 0 && (
+            <section className="sv-history mt-8" aria-label="Recent searches">
+              <div className="sv-history-head">
+                <span className="sv-label">Recent</span>
+                <button
+                  type="button"
+                  className="sv-history-clear"
+                  onClick={clearHistory}
+                >
+                  Clear
+                </button>
+              </div>
+              <div className="sv-history-list">
+                {history.map((term) => (
+                  <button
+                    key={term}
+                    type="button"
+                    className="sv-history-item"
+                    onClick={() => {
+                      setQuery(term);
+                      setResult(null);
+                      setError(null);
+                    }}
+                    disabled={loading}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <circle cx="11" cy="11" r="7" />
+                      <path d="m21 21-4.3-4.3" />
+                    </svg>
+                    {term}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
           {/* Error */}
           {error && (
             <section className="sv-state sv-state--accent mt-10">
@@ -506,7 +644,7 @@ export default function Home() {
                           ? "Start Scraping"
                           : "Refresh Jobs"}
                   </button>
-                  {result.company.status === "healing_failed" && (
+                  {result.company.scraper_id && (
                     <button
                       className="sv-btn sv-btn--accent"
                       onClick={handleHeal}

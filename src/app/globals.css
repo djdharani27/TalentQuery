@@ -374,6 +374,87 @@ a {
   margin-top: 12px;
 }
 
+/* ── Recent searches ──────────────────────────────────────────────── */
+.sv-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.sv-history-clear {
+  appearance: none;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--ink-3);
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.sv-history-clear:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.sv-history-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sv-history-item {
+  appearance: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  padding: 7px 14px;
+  border: 1px solid var(--line-soft);
+  background: var(--surface);
+  color: var(--ink-2);
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.sv-history-item svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.sv-history-item:hover:not(:disabled) {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+  transform: translateY(-1px);
+}
+
+.sv-history-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sv-history-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 /* ── Buttons ──────────────────────────────────────────────────────── */
 .sv-btn {
   appearance: none;
