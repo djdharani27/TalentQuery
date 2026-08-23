@@ -259,9 +259,9 @@ export default function Home() {
       <header className="sv-header">
         <div className="sv-header-inner">
           <Link href="/" className="sv-brand">
-            <span className="sv-brand-mark">CS</span>
+            <span className="sv-brand-mark">TQ</span>
             <span className="sv-brand-name">
-              Career Scrape
+              TalentQuery
             </span>
           </Link>
           <nav className="sv-nav">
