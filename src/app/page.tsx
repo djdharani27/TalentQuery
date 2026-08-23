@@ -54,6 +54,8 @@ const ACTIVE_STATUSES = [
   "self_healing",
 ];
 
+const EXAMPLE_COMPANIES = ["Cursor", "SafetyKit", "CircleBack"];
+
 function StatusBadge({ status }: { status: string }) {
   const tone = (() => {
     if (status === "healthy") return "sv-badge--healthy";
@@ -300,7 +302,16 @@ export default function Home() {
           <section className="sv-search" aria-label="Search">
             <div className="sv-search-row">
               <span className="sv-search-prefix" aria-hidden="true">
-                &gt;
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
               </span>
               <input
                 className="sv-input"
@@ -308,10 +319,63 @@ export default function Home() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                placeholder="Company name, domain, or URL (e.g. Cursor, hex.tech, https://nozomio.com/careers)"
+                placeholder="Company name, domain, or URL"
                 disabled={loading}
                 aria-label="Company name, domain, or careers URL"
               />
+              <div className="sv-search-chips" aria-label="Example companies">
+                {EXAMPLE_COMPANIES.map((company) => (
+                  <button
+                    key={company}
+                    type="button"
+                    className="sv-chip"
+                    onClick={() => setQuery(company)}
+                    disabled={loading}
+                  >
+                    <svg
+                      className="sv-chip-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M3 21h18" />
+                      <path d="M5 21V7l7-4 7 4v14" />
+                      <path d="M9 9h1" />
+                      <path d="M14 9h1" />
+                      <path d="M9 13h1" />
+                      <path d="M14 13h1" />
+                      <path d="M9 17h1" />
+                      <path d="M14 17h1" />
+                    </svg>
+                    {company}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="sv-search-submit"
+                onClick={handleSearch}
+                disabled={loading || !query.trim()}
+                aria-label="Search"
+                title="Search"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m21 21-4.3-4.3" />
+                </svg>
+              </button>
             </div>
             <div className="flex items-center justify-between gap-4 mt-3">
               <span className="sv-hint">
