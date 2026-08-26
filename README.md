@@ -61,6 +61,21 @@ Then open http://localhost:3000.
 - **Self-healing** — if the score drops, it asks Bright Data to fix the scraper and tries again.
 - **Storage** — jobs go into Supabase and update instead of duplicating.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    User[User] --> UI[Next.js UI]
+    UI --> API[API Routes]
+    API --> Discovery[Careers Page Discovery]
+    Discovery --> BrightData[Bright Data Scraper]
+    BrightData --> Health[Health Check / Self-Healing]
+    Health --> Supabase[(Supabase)]
+    Supabase --> UI
+```
+
+A search starts in the Next.js UI, which finds a company's careers page and sends it to Bright Data to scrape. The result is scored for quality and sent through the self-healing step if it breaks. Jobs are stored in Supabase and shown back to the user.
+
 ## Project layout
 
 ```
